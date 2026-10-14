@@ -5,13 +5,13 @@
 
 ## 仓库事务
 
-- [ ] License 选择与文件落地（README 徽章按实际 LICENSE 挂）
-- [ ] 语言/工具链确定（Go 版本、模块路径、CI 矩阵）
-- [ ] 目录骨架按规格 §3 建立（先空壳 + 编译通过）
+- [x] License 选择与文件落地（README 徽章按实际 LICENSE 挂）—— Apache-2.0（用户仓库惯例），LICENSE 落地，双语 README 徽章已挂
+- [x] 语言/工具链确定（Go 版本、模块路径、CI 矩阵）—— Go 1.26 起（本机 1.27.1），模块 `github.com/cuihairu/chame`，CI 矩阵 1.26.x + 1.27.x（`.github/workflows/ci.yml`）
+- [x] 目录骨架按规格 §3 建立（先空壳 + 编译通过）—— 核心包 doc.go 空壳已建；`examples/ templates/ tools/ adapters/*/internal/` 待有内容再建（git 不跟踪空目录，规格 §3.1 允许）
 
 ## 待用户确认的架构决策（规格 §23）
 
-- [ ] 逐条确认 §23 列出的架构决策项 —— **用户已授权代决，逐条给出推荐方案并标注**
+- [x] 逐条确认 §23 列出的架构决策项 —— **用户已授权代决，逐条给出推荐方案并标注**：见 [docs/decisions/](docs/decisions/) ADR-0001 ~ 0008，均标「代决，用户可推翻」
 
 ## 分期（规格 §19）
 

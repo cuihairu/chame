@@ -1,0 +1,11 @@
+# build output
+/bin/
+
+# test and coverage artifacts
+*.test
+*.out
+coverage.txt
+
+# editors
+.idea/
+.vscode/

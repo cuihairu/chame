@@ -1,5 +1,9 @@
 # Chame
 
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+[![Go](https://img.shields.io/badge/go-1.26%2B-00ADD8.svg)](https://go.dev)
+[![CI](https://github.com/cuihairu/chame/actions/workflows/ci.yml/badge.svg)](https://github.com/cuihairu/chame/actions/workflows/ci.yml)
+
 > **English** | [中文](README.zh.md)
 
 **Chame** is a Go game backend framework that abstracts blockchains behind one
@@ -27,15 +31,30 @@ behind an adapter so the game side keeps one contract.
 
 ## Status
 
-**Design stage.** The full spec lives in
+**Skeleton stage.** The full spec lives in
 [`docs/design/chame-spec.md`](docs/design/chame-spec.md) — 24 chapters covering
 architecture, adapters, transaction state machine, idempotency, event handling,
 signing, error model, observability, testing, CI, phased rollout, and a
 Definition of Done.
 
-No implementation code yet. The phased plan and open decisions are tracked in
-[`todo.md`](todo.md).
+The repository skeleton is in place: package shells per the spec directory
+layout, build and CI tooling, and architecture decisions recorded in
+[`docs/decisions/`](docs/decisions/). Phased implementation is tracked in
+[`todo.md`](todo.md) — phase 1 (core runtime) is next.
+
+## Development
+
+Requires Go 1.26+.
+
+```sh
+make ci        # gofmt check + vet + build + test
+make test-race
+make lint      # golangci-lint
+```
+
+CI runs the same checks on Go 1.26.x and 1.27.x, plus golangci-lint and a
+dependency vulnerability check.
 
 ## License
 
-TBD — see [todo.md](todo.md).
+[Apache-2.0](LICENSE).

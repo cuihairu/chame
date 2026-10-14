@@ -1,5 +1,9 @@
 # Chame
 
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+[![Go](https://img.shields.io/badge/go-1.26%2B-00ADD8.svg)](https://go.dev)
+[![CI](https://github.com/cuihairu/chame/actions/workflows/ci.yml/badge.svg)](https://github.com/cuihairu/chame/actions/workflows/ci.yml)
+
 > [English](README.md) | **中文**
 
 **Chame** 是一个把区块链抽象在统一运行时之后的 **Go 游戏后端框架**。游戏侧只面对
@@ -25,13 +29,27 @@ Chame 把链收进适配器，游戏侧保持同一份契约。
 
 ## 当前状态
 
-**设计阶段。** 完整规格见
+**骨架阶段。** 完整规格见
 [`docs/design/chame-spec.md`](docs/design/chame-spec.md)——共 24 章，覆盖架构、
 适配器、交易状态机、幂等、事件处理、签名、错误模型、可观测性、测试、CI、
 分期实施与完成定义。
 
-**尚无实现代码。** 分期待办与未决项见 [`todo.md`](todo.md)。
+仓库骨架已落地：按规格目录建立了包空壳、构建与 CI 工具链，架构决策记录在
+[`docs/decisions/`](docs/decisions/)。分期实施见 [`todo.md`](todo.md)——
+下一步是阶段一（核心 Runtime）。
+
+## 开发
+
+需要 Go 1.26+。
+
+```sh
+make ci        # gofmt 检查 + vet + 构建 + 测试
+make test-race
+make lint      # golangci-lint
+```
+
+CI 在 Go 1.26.x 与 1.27.x 上执行同样检查，另含 golangci-lint 与依赖漏洞扫描。
 
 ## 许可证
 
-待定——见 [todo.md](todo.md)。
+[Apache-2.0](LICENSE)。
