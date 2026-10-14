@@ -29,14 +29,16 @@ Chame 把链收进适配器，游戏侧保持同一份契约。
 
 ## 当前状态
 
-**骨架阶段。** 完整规格见
+**阶段一已落地。** 完整规格见
 [`docs/design/chame-spec.md`](docs/design/chame-spec.md)——共 24 章，覆盖架构、
 适配器、交易状态机、幂等、事件处理、签名、错误模型、可观测性、测试、CI、
 分期实施与完成定义。
 
-仓库骨架已落地：按规格目录建立了包空壳、构建与 CI 工具链，架构决策记录在
+已交付：Runtime 生命周期容器（模块注册、依赖图校验、优雅关闭）、分层配置
+系统、链无关身份模型（`NetworkID`、`Address`、`Amount`、`AssetID`）。架构
+决策汇总在 [`docs/design/decisions.md`](docs/design/decisions.md)，详细 ADR 在
 [`docs/decisions/`](docs/decisions/)。分期实施见 [`todo.md`](todo.md)——
-下一步是阶段一（核心 Runtime）。
+下一步：交易公共模型与状态机。
 
 ## 开发
 

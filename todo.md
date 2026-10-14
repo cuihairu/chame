@@ -15,7 +15,7 @@
 
 ## 分期（规格 §19）
 
-- [ ] 阶段一：Runtime + 配置系统 + 公共能力层（§2 §4 §5 §6）
+- [x] 阶段一：Runtime + 配置系统 + 公共能力层（§2 §4 §5 §6）—— runtime 生命周期状态机/依赖图/优雅关闭、module Registry、config 分层加载与 §5.4 校验、identifiers（NetworkID/Address/Amount/AssetID）、health/logging/clock、capability 声明检测、examples/minimal；51 个测试函数全绿（含 -race）
 - [ ] 阶段二：交易公共模型与状态机（§9）
 - [ ] 阶段三：EVM Adapter（§7）
 - [ ] 阶段四：Solana Adapter（§8）

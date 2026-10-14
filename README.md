@@ -31,16 +31,19 @@ behind an adapter so the game side keeps one contract.
 
 ## Status
 
-**Skeleton stage.** The full spec lives in
+**Phase 1 landed.** The full spec lives in
 [`docs/design/chame-spec.md`](docs/design/chame-spec.md) — 24 chapters covering
 architecture, adapters, transaction state machine, idempotency, event handling,
 signing, error model, observability, testing, CI, phased rollout, and a
 Definition of Done.
 
-The repository skeleton is in place: package shells per the spec directory
-layout, build and CI tooling, and architecture decisions recorded in
-[`docs/decisions/`](docs/decisions/). Phased implementation is tracked in
-[`todo.md`](todo.md) — phase 1 (core runtime) is next.
+Shipped so far: the runtime lifecycle container (module registry, dependency
+graph, graceful stop), the layered config system, and the chain-agnostic
+identity model (`NetworkID`, `Address`, `Amount`, `AssetID`). Architecture
+decisions live in [`docs/design/decisions.md`](docs/design/decisions.md) with
+detailed ADRs in [`docs/decisions/`](docs/decisions/). Phased implementation is
+tracked in [`todo.md`](todo.md) — next: the shared transaction model and state
+machine.
 
 ## Development
 
