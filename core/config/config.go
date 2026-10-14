@@ -63,8 +63,7 @@ type Transactions struct {
 	Enabled bool `yaml:"enabled"`
 }
 
-// Events holds the event feature gate. Event shipping also lands later;
-// enabling it is rejected at validation until then.
+// Events holds the event feature gate (§11 pipeline shipped).
 type Events struct {
 	Enabled bool `yaml:"enabled"`
 }

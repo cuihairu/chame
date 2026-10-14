@@ -232,7 +232,6 @@ func TestValidationRules(t *testing.T) {
 			}}
 		}, "read_only"},
 		{"transactions enabled", func(c *Config) { c.Transactions.Enabled = true }, "transactions"},
-		{"events enabled", func(c *Config) { c.Events.Enabled = true }, "events"},
 	}
 	for _, tc := range cases {
 		c := base()
@@ -244,6 +243,13 @@ func TestValidationRules(t *testing.T) {
 	}
 	if err := base().Validate(); err != nil {
 		t.Fatalf("valid config rejected: %v", err)
+	}
+	// The event pipeline shipped (§11): its gate validates like any
+	// other field and enabling it is a supported configuration.
+	c := base()
+	c.Events.Enabled = true
+	if err := c.Validate(); err != nil {
+		t.Fatalf("events enabled rejected: %v", err)
 	}
 }
 

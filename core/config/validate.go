@@ -52,15 +52,12 @@ func (c Config) Validate() error {
 		}
 	}
 
-	// Feature gates of later phases must stay off in this release
+	// The transaction gate must stay off until signing support lands
 	// (spec §5.4: 交易功能启用但未配置所需签名能力 / 不安全的生产环境
 	// 默认配置 — signer configuration itself arrives with the
-	// transaction phase, so enabling either gate is unsafe today).
+	// transaction phase, so enabling the gate is unsafe today).
 	if c.Transactions.Enabled {
 		return fmt.Errorf("config: transactions.enabled: transaction support ships in a later phase, keep it disabled")
-	}
-	if c.Events.Enabled {
-		return fmt.Errorf("config: events.enabled: event support ships in a later phase, keep it disabled")
 	}
 	return nil
 }
