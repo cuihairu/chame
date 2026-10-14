@@ -15,39 +15,12 @@ import (
 
 	"github.com/cuihairu/chame/capability/event"
 	"github.com/cuihairu/chame/core/clock"
-	"github.com/cuihairu/chame/core/identifiers"
 )
 
-// ErrBlockUnknown is returned by a Source whose Head cannot verify a
-// height: the block is pruned, below the node's horizon, or not indexed.
-// It is not a chain failure; the dispatcher keeps the cursor position and
-// lets the next poll make progress.
-var ErrBlockUnknown = errors.New("eventing: block position unknown to source")
-
-// Source is one chain event origin (§11.1). Adapters implement it; the
-// dispatcher speaks only the shared model. Implementations must not
-// assume they are the only reader of their network.
-type Source interface {
-	// Network pins the source to one logical network.
-	Network() identifiers.NetworkID
-	// Type names the origin (§11.1).
-	Type() event.SourceType
-	// Poll reads committed events after the cursor position (§11.5). It
-	// returns only events whose blocks the source considers committed
-	// under its confirmation policy, plus the furthest position that may
-	// be persisted as the new cursor — never a bare integer ignoring
-	// reorg semantics (§11.5).
-	Poll(ctx context.Context, cursor event.Cursor) ([]event.Event, event.Cursor, error)
-	// Head returns the canonical block hash at height (the slot
-	// reference for Solana). ErrBlockUnknown means the position cannot be
-	// verified. The dispatcher compares it against the stored cursor's
-	// hash to detect a reorganization (§11.6).
-	Head(ctx context.Context, height uint64) (string, error)
-	// Observe re-checks one stored event's finality on the current chain
-	// (§11.4: wait for confirmation per configuration). It is called for
-	// events whose finality has not reached the requirement yet.
-	Observe(ctx context.Context, ev event.Event) (event.FinalityState, error)
-}
+// Source is the chain event origin contract (§11.1), defined in the
+// capability layer so chain adapters can implement it without importing
+// the application layer.
+type Source = event.Source
 
 // Handler consumes one event (§11.4). Delivery is at least once, so a
 // handler must be safe to run repeatedly for the same event; consumers
@@ -404,7 +377,7 @@ func (d *Dispatcher) deliverReady(ctx context.Context, src Source, report *Repor
 func (d *Dispatcher) promote(ctx context.Context, src Source, ev event.Event, now time.Time) (bool, error) {
 	finality, err := src.Observe(ctx, ev)
 	if err != nil {
-		if errors.Is(err, ErrBlockUnknown) {
+		if errors.Is(err, event.ErrPositionUnknown) {
 			return false, nil // position cannot be verified yet: keep waiting
 		}
 		return false, fmt.Errorf("observe %s: %w", ev.ID, err)
@@ -512,7 +485,7 @@ func (d *Dispatcher) checkReorg(ctx context.Context, src Source, cursor event.Cu
 		return cursor, 0, false, nil // nothing verified yet
 	}
 	hash, err := src.Head(ctx, cursor.BlockHeight)
-	if errors.Is(err, ErrBlockUnknown) {
+	if errors.Is(err, event.ErrPositionUnknown) {
 		return cursor, 0, false, nil // cannot verify: keep position
 	}
 	if err != nil {

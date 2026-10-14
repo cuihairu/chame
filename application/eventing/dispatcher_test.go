@@ -128,7 +128,7 @@ func (s *fakeSource) Head(_ context.Context, height uint64) (string, error) {
 	}
 	hash, ok := s.chain[height]
 	if !ok {
-		return "", ErrBlockUnknown
+		return "", event.ErrPositionUnknown
 	}
 	return hash, nil
 }
@@ -526,7 +526,7 @@ func TestTickKeepsPositionWhenHeadIsUnknown(t *testing.T) {
 	// The node cannot verify the cursor's block (pruned below its
 	// horizon): the dispatcher must keep the position, not treat it as
 	// a reorg, and keep making progress.
-	s.src.headErr = ErrBlockUnknown
+	s.src.headErr = event.ErrPositionUnknown
 	s.src.addBlock(11, "0xb", 1)
 	report, err := s.disp.Tick(context.Background())
 	if err != nil {
