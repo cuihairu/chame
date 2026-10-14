@@ -20,8 +20,9 @@ import (
 	"github.com/cuihairu/chame/core/identifiers"
 )
 
-// newStoreFunc builds a fresh, empty repository for one subtest.
-type newStoreFunc func() transaction.Repository
+// newStoreFunc builds a fresh, empty repository for one subtest. The
+// store must contain no records when the subtest starts.
+type newStoreFunc func(t *testing.T) transaction.Repository
 
 // Run executes the full repository suite against a fresh store per
 // subtest. The store is expected to be empty at start; tests never share
@@ -72,7 +73,7 @@ func runIdempotency(t *testing.T, newStore newStoreFunc) {
 	at := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
 
 	t.Run("finds record by key", func(t *testing.T) {
-		repo := newStore()
+		repo := newStore(t)
 		mustCreate(t, repo, record("tx-1", "key-1", "hash-1", at))
 		got, err := repo.FindByIdempotencyKey(ctx,
 			transaction.IdempotencyScope{Application: "app", OperationType: "payout"}, "key-1")
@@ -85,7 +86,7 @@ func runIdempotency(t *testing.T, newStore newStoreFunc) {
 	})
 
 	t.Run("missing key is not found", func(t *testing.T) {
-		repo := newStore()
+		repo := newStore(t)
 		_, err := repo.FindByIdempotencyKey(ctx,
 			transaction.IdempotencyScope{Application: "app", OperationType: "payout"}, "nope")
 		if !errors.Is(err, transaction.ErrRecordNotFound) {
@@ -94,7 +95,7 @@ func runIdempotency(t *testing.T, newStore newStoreFunc) {
 	})
 
 	t.Run("same key same hash keeps the first record", func(t *testing.T) {
-		repo := newStore()
+		repo := newStore(t)
 		mustCreate(t, repo, record("tx-1", "key-1", "hash-1", at))
 		// A retry builds a different record identity but the same request.
 		retry := record("tx-2", "key-1", "hash-1", at.Add(time.Minute))
@@ -115,7 +116,7 @@ func runIdempotency(t *testing.T, newStore newStoreFunc) {
 	})
 
 	t.Run("same key different hash conflicts", func(t *testing.T) {
-		repo := newStore()
+		repo := newStore(t)
 		mustCreate(t, repo, record("tx-1", "key-1", "hash-1", at))
 		err := repo.Create(ctx, record("tx-2", "key-1", "hash-DIFFERENT", at))
 		if !errors.Is(err, cherrs.ErrIdempotencyConflict) {
@@ -130,7 +131,7 @@ func runIdempotency(t *testing.T, newStore newStoreFunc) {
 	})
 
 	t.Run("keys do not leak across scopes", func(t *testing.T) {
-		repo := newStore()
+		repo := newStore(t)
 		mustCreate(t, repo, record("tx-1", "key-1", "hash-1", at))
 		// Same key string, different application.
 		other := record("tx-2", "key-1", "hash-1", at)
@@ -149,7 +150,7 @@ func runIdempotency(t *testing.T, newStore newStoreFunc) {
 	})
 
 	t.Run("concurrent replays create exactly one operation", func(t *testing.T) {
-		repo := newStore()
+		repo := newStore(t)
 		const n = 16
 		errs := make([]error, n)
 		var wg sync.WaitGroup
@@ -177,8 +178,17 @@ func runIdempotency(t *testing.T, newStore newStoreFunc) {
 		}
 	})
 
+	t.Run("duplicate keyless id is a persistence failure", func(t *testing.T) {
+		repo := newStore(t)
+		mustCreate(t, repo, record("tx-1", "", "", at))
+		err := repo.Create(ctx, record("tx-1", "", "", at.Add(time.Minute)))
+		if !errors.Is(err, cherrs.ErrPersistenceFailure) {
+			t.Fatalf("want ErrPersistenceFailure, got %v", err)
+		}
+	})
+
 	t.Run("concurrent different requests elect one winner", func(t *testing.T) {
-		repo := newStore()
+		repo := newStore(t)
 		const n = 16
 		errs := make([]error, n)
 		var wg sync.WaitGroup
@@ -215,13 +225,13 @@ func runStatusMachine(t *testing.T, newStore newStoreFunc) {
 
 	newCreated := func(t *testing.T) transaction.Repository {
 		t.Helper()
-		repo := newStore()
+		repo := newStore(t)
 		mustCreate(t, repo, record("tx-1", "", "", at))
 		return repo
 	}
 
 	t.Run("missing record is not found", func(t *testing.T) {
-		repo := newStore()
+		repo := newStore(t)
 		if _, err := repo.Get(ctx, "nope"); !errors.Is(err, transaction.ErrRecordNotFound) {
 			t.Fatalf("want ErrRecordNotFound, got %v", err)
 		}
@@ -322,7 +332,7 @@ func runStaleScan(t *testing.T, newStore newStoreFunc) {
 
 	seed := func(t *testing.T) transaction.Repository {
 		t.Helper()
-		repo := newStore()
+		repo := newStore(t)
 		cases := []struct {
 			id  string
 			st  transaction.TransactionStatus
@@ -378,7 +388,7 @@ func runStaleScan(t *testing.T, newStore newStoreFunc) {
 	})
 
 	t.Run("validates the query", func(t *testing.T) {
-		repo := newStore()
+		repo := newStore(t)
 		if _, err := repo.FindStale(ctx, transaction.StaleQuery{OlderThan: base}); err == nil {
 			t.Fatalf("empty status list must be rejected")
 		}
@@ -403,7 +413,7 @@ func runLease(t *testing.T, newStore newStoreFunc) {
 
 	newRecord := func(t *testing.T) transaction.Repository {
 		t.Helper()
-		repo := newStore()
+		repo := newStore(t)
 		mustCreate(t, repo, record("tx-1", "", "", at))
 		return repo
 	}
@@ -470,7 +480,7 @@ func runLease(t *testing.T, newStore newStoreFunc) {
 	})
 
 	t.Run("claim and release on missing records are not found", func(t *testing.T) {
-		repo := newStore()
+		repo := newStore(t)
 		if _, err := repo.Claim(ctx, "nope", lease(holderA, at, at.Add(time.Hour))); !errors.Is(err, transaction.ErrRecordNotFound) {
 			t.Fatalf("want ErrRecordNotFound, got %v", err)
 		}
@@ -545,7 +555,7 @@ func runRecordValidation(t *testing.T, newStore newStoreFunc) {
 	at := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
 
 	t.Run("rejects an empty id", func(t *testing.T) {
-		repo := newStore()
+		repo := newStore(t)
 		err := repo.Create(ctx, record("", "", "", at))
 		if err == nil {
 			t.Fatalf("empty id must be rejected")
@@ -553,7 +563,7 @@ func runRecordValidation(t *testing.T, newStore newStoreFunc) {
 	})
 
 	t.Run("rejects an unknown status", func(t *testing.T) {
-		repo := newStore()
+		repo := newStore(t)
 		tx := record("tx-1", "", "", at)
 		tx.Status = "bogus"
 		if err := repo.Create(ctx, tx); err == nil {
@@ -562,7 +572,7 @@ func runRecordValidation(t *testing.T, newStore newStoreFunc) {
 	})
 
 	t.Run("rejects a key without request hash", func(t *testing.T) {
-		repo := newStore()
+		repo := newStore(t)
 		tx := record("tx-1", "key-1", "", at)
 		if err := repo.Create(ctx, tx); err == nil {
 			t.Fatalf("key without request hash must be rejected (§10.1)")
@@ -570,7 +580,7 @@ func runRecordValidation(t *testing.T, newStore newStoreFunc) {
 	})
 
 	t.Run("rejects a key without scope", func(t *testing.T) {
-		repo := newStore()
+		repo := newStore(t)
 		tx := record("tx-1", "key-1", "hash-1", at)
 		tx.IdempotencyScope = transaction.IdempotencyScope{}
 		if err := repo.Create(ctx, tx); err == nil {
@@ -579,7 +589,7 @@ func runRecordValidation(t *testing.T, newStore newStoreFunc) {
 	})
 
 	t.Run("rejects zero timestamps", func(t *testing.T) {
-		repo := newStore()
+		repo := newStore(t)
 		tx := record("tx-1", "", "", at)
 		tx.CreatedAt = time.Time{}
 		if err := repo.Create(ctx, tx); err == nil {
@@ -588,7 +598,7 @@ func runRecordValidation(t *testing.T, newStore newStoreFunc) {
 	})
 
 	t.Run("rejects a non-canonical amount", func(t *testing.T) {
-		repo := newStore()
+		repo := newStore(t)
 		tx := record("tx-1", "", "", at)
 		tx.Amount = identifiers.Amount{Raw: "1.5", AssetID: "native"}
 		if err := repo.Create(ctx, tx); err == nil {
@@ -606,7 +616,7 @@ func runChainData(t *testing.T, newStore newStoreFunc) {
 	at := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
 
 	t.Run("json content round trips", func(t *testing.T) {
-		repo := newStore()
+		repo := newStore(t)
 		tx := record("tx-1", "", "", at)
 		tx.ChainData = map[string]any{"kind": "evm", "nonce": float64(7)}
 		mustCreate(t, repo, tx)
@@ -629,7 +639,7 @@ func runChainData(t *testing.T, newStore newStoreFunc) {
 	})
 
 	t.Run("absent chain data stays absent", func(t *testing.T) {
-		repo := newStore()
+		repo := newStore(t)
 		mustCreate(t, repo, record("tx-1", "", "", at))
 		got, err := repo.Get(ctx, "tx-1")
 		if err != nil {

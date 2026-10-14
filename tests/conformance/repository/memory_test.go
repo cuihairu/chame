@@ -12,7 +12,7 @@ import (
 // the in-memory store (ADR-0002): the SQL implementation must pass the
 // same suite before it ships.
 func TestMemoryStoreConformance(t *testing.T) {
-	repository.Run(t, func() transaction.Repository {
+	repository.Run(t, func(t *testing.T) transaction.Repository {
 		return memory.New()
 	})
 }

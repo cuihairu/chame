@@ -16,6 +16,24 @@ jobs:
       fail-fast: false
       matrix:
         go: ["1.26.x", "1.27.x"]
+    services:
+      # PostgreSQL for the SQL persistence suite (ADR-0002). The suite
+      # skips itself when the DSN is absent, so local runs stay green.
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: chame
+          POSTGRES_PASSWORD: chame
+          POSTGRES_DB: chame_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U chame"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      CHAME_TEST_PG_DSN: postgres://chame:chame@localhost:5432/chame_test?sslmode=disable
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
