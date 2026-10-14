@@ -31,7 +31,7 @@ behind an adapter so the game side keeps one contract.
 
 ## Status
 
-**Phases 1–4 landed.** The full spec lives in
+**Phases 1–5 landed.** The full spec lives in
 [`docs/design/chame-spec.md`](docs/design/chame-spec.md) — 24 chapters covering
 architecture, adapters, transaction state machine, idempotency, event handling,
 signing, error model, observability, testing, CI, phased rollout, and a
@@ -48,10 +48,14 @@ balances, `eth_call`, log reads), and the read-only Solana adapter
 (`adapters/solana` — independent cluster instances, per-endpoint genesis hash
 verification, account / native / SPL token queries, transaction and signature
 history, commitment configuration, explicit unsupported-capability errors),
-plus the full `core/errors` taxonomy. Architecture decisions live in
+the full `core/errors` taxonomy, and the persistence layer (§10 — repository
+contract with idempotency uniqueness, conditional status updates and
+reconciliation leases; in-memory store for tests; PostgreSQL store behind the
+same conformance suite; idempotency resolution service; recovery worker with
+lease-based multi-instance dedup). Architecture decisions live in
 [`docs/design/decisions.md`](docs/design/decisions.md) with detailed ADRs in
 [`docs/decisions/`](docs/decisions/). Phased implementation is tracked in
-[`todo.md`](todo.md) — next: idempotency, persistence and recovery.
+[`todo.md`](todo.md) — next: on-chain event handling.
 
 ## Development
 

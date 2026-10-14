@@ -29,7 +29,7 @@ Chame 把链收进适配器，游戏侧保持同一份契约。
 
 ## 当前状态
 
-**阶段一、二、三、四已落地。** 完整规格见
+**阶段一、二、三、四、五已落地。** 完整规格见
 [`docs/design/chame-spec.md`](docs/design/chame-spec.md)——共 24 章，覆盖架构、
 适配器、交易状态机、幂等、事件处理、签名、错误模型、可观测性、测试、CI、
 分期实施与完成定义。
@@ -41,11 +41,14 @@ Chame 把链收进适配器，游戏侧保持同一份契约。
 切换、逐端点 Chain ID 校验、健康检查、原生与 ERC-20 余额、`eth_call`、日志
 读取）、只读 Solana 适配器（`adapters/solana`——独立集群实例、逐端点
 Genesis Hash 校验、账户/原生/SPL Token 查询、交易与签名历史、Commitment
-配置、显式 unsupported-capability 错误），以及 `core/errors` 全量错误分类。
+配置、显式 unsupported-capability 错误）、`core/errors` 全量错误分类，以及
+持久化层（§10——Repository 契约：幂等唯一性、条件状态更新、对账租约；测试
+用内存实现；PostgreSQL 实现过同一 conformance 套件；幂等解析服务；基于租约
+多实例去重的恢复 Worker）。
 架构决策汇总在
 [`docs/design/decisions.md`](docs/design/decisions.md)，详细 ADR 在
 [`docs/decisions/`](docs/decisions/)。分期实施见 [`todo.md`](todo.md)——
-下一步：幂等 / 持久化 / 恢复。
+下一步：链上事件处理。
 
 ## 开发
 
