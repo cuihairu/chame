@@ -397,8 +397,8 @@ func runLease(t *testing.T, newStore newStoreFunc) {
 	ctx := context.Background()
 	at := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
 	holderA, holderB := "worker-a", "worker-b"
-	lease := func(holder string, until time.Time) transaction.Lease {
-		return transaction.Lease{Holder: holder, ExpiresAt: until}
+	lease := func(holder string, claimAt, until time.Time) transaction.Lease {
+		return transaction.Lease{Holder: holder, At: claimAt, ExpiresAt: until}
 	}
 
 	newRecord := func(t *testing.T) transaction.Repository {
@@ -410,7 +410,7 @@ func runLease(t *testing.T, newStore newStoreFunc) {
 
 	t.Run("unclaimed record claims", func(t *testing.T) {
 		repo := newRecord(t)
-		ok, err := repo.Claim(ctx, "tx-1", lease(holderA, at.Add(time.Hour)))
+		ok, err := repo.Claim(ctx, "tx-1", lease(holderA, at, at.Add(time.Hour)))
 		if err != nil || !ok {
 			t.Fatalf("claim: ok=%v err=%v", ok, err)
 		}
@@ -418,26 +418,39 @@ func runLease(t *testing.T, newStore newStoreFunc) {
 
 	t.Run("held record refuses another holder", func(t *testing.T) {
 		repo := newRecord(t)
-		if ok, _ := repo.Claim(ctx, "tx-1", lease(holderA, at.Add(time.Hour))); !ok {
+		if ok, _ := repo.Claim(ctx, "tx-1", lease(holderA, at, at.Add(time.Hour))); !ok {
 			t.Fatalf("setup claim failed")
 		}
-		ok, err := repo.Claim(ctx, "tx-1", lease(holderB, at.Add(30*time.Minute)))
+		ok, err := repo.Claim(ctx, "tx-1", lease(holderB, at, at.Add(30*time.Minute)))
 		if ok || err != nil {
 			t.Fatalf("claim by second holder must refuse without error, got ok=%v err=%v", ok, err)
 		}
 	})
 
+	t.Run("simultaneous claims with equal ttl elect one holder", func(t *testing.T) {
+		repo := newRecord(t)
+		// Two instances claiming at the same instant with the same ttl:
+		// the first claim must win, the second must refuse.
+		if ok, _ := repo.Claim(ctx, "tx-1", lease(holderA, at, at.Add(time.Hour))); !ok {
+			t.Fatalf("first claim failed")
+		}
+		ok, err := repo.Claim(ctx, "tx-1", lease(holderB, at, at.Add(time.Hour)))
+		if ok || err != nil {
+			t.Fatalf("equal-instant claim must refuse, got ok=%v err=%v", ok, err)
+		}
+	})
+
 	t.Run("same holder renews", func(t *testing.T) {
 		repo := newRecord(t)
-		if ok, _ := repo.Claim(ctx, "tx-1", lease(holderA, at.Add(time.Hour))); !ok {
+		if ok, _ := repo.Claim(ctx, "tx-1", lease(holderA, at, at.Add(time.Hour))); !ok {
 			t.Fatalf("setup claim failed")
 		}
-		ok, err := repo.Claim(ctx, "tx-1", lease(holderA, at.Add(2*time.Hour)))
+		ok, err := repo.Claim(ctx, "tx-1", lease(holderA, at.Add(time.Minute), at.Add(2*time.Hour)))
 		if err != nil || !ok {
 			t.Fatalf("renewal: ok=%v err=%v", ok, err)
 		}
 		// The renewed lease still blocks the other holder.
-		ok, err = repo.Claim(ctx, "tx-1", lease(holderB, at.Add(30*time.Minute)))
+		ok, err = repo.Claim(ctx, "tx-1", lease(holderB, at.Add(time.Minute), at.Add(30*time.Minute)))
 		if ok || err != nil {
 			t.Fatalf("renewed lease must still block, got ok=%v err=%v", ok, err)
 		}
@@ -445,12 +458,12 @@ func runLease(t *testing.T, newStore newStoreFunc) {
 
 	t.Run("expired lease is takeable", func(t *testing.T) {
 		repo := newRecord(t)
-		if ok, _ := repo.Claim(ctx, "tx-1", lease(holderA, at.Add(time.Hour))); !ok {
+		if ok, _ := repo.Claim(ctx, "tx-1", lease(holderA, at, at.Add(time.Hour))); !ok {
 			t.Fatalf("setup claim failed")
 		}
-		// holderB claims at a later instant with a later expiry: by the
-		// incoming lease's clock the old claim has lapsed.
-		ok, err := repo.Claim(ctx, "tx-1", lease(holderB, at.Add(2*time.Hour)))
+		// holderB claims at a later instant: by its clock the old claim
+		// has lapsed.
+		ok, err := repo.Claim(ctx, "tx-1", lease(holderB, at.Add(2*time.Hour), at.Add(3*time.Hour)))
 		if err != nil || !ok {
 			t.Fatalf("takeover after expiry: ok=%v err=%v", ok, err)
 		}
@@ -458,7 +471,7 @@ func runLease(t *testing.T, newStore newStoreFunc) {
 
 	t.Run("claim and release on missing records are not found", func(t *testing.T) {
 		repo := newStore()
-		if _, err := repo.Claim(ctx, "nope", lease(holderA, at)); !errors.Is(err, transaction.ErrRecordNotFound) {
+		if _, err := repo.Claim(ctx, "nope", lease(holderA, at, at.Add(time.Hour))); !errors.Is(err, transaction.ErrRecordNotFound) {
 			t.Fatalf("want ErrRecordNotFound, got %v", err)
 		}
 		if err := repo.Release(ctx, "nope", holderA); !errors.Is(err, transaction.ErrRecordNotFound) {
@@ -468,13 +481,13 @@ func runLease(t *testing.T, newStore newStoreFunc) {
 
 	t.Run("owner release frees the record", func(t *testing.T) {
 		repo := newRecord(t)
-		if ok, _ := repo.Claim(ctx, "tx-1", lease(holderA, at.Add(time.Hour))); !ok {
+		if ok, _ := repo.Claim(ctx, "tx-1", lease(holderA, at, at.Add(time.Hour))); !ok {
 			t.Fatalf("setup claim failed")
 		}
 		if err := repo.Release(ctx, "tx-1", holderA); err != nil {
 			t.Fatalf("release: %v", err)
 		}
-		ok, err := repo.Claim(ctx, "tx-1", lease(holderB, at.Add(30*time.Minute)))
+		ok, err := repo.Claim(ctx, "tx-1", lease(holderB, at, at.Add(30*time.Minute)))
 		if err != nil || !ok {
 			t.Fatalf("claim after release: ok=%v err=%v", ok, err)
 		}
@@ -482,13 +495,13 @@ func runLease(t *testing.T, newStore newStoreFunc) {
 
 	t.Run("release by a non-owner is a no-op", func(t *testing.T) {
 		repo := newRecord(t)
-		if ok, _ := repo.Claim(ctx, "tx-1", lease(holderA, at.Add(time.Hour))); !ok {
+		if ok, _ := repo.Claim(ctx, "tx-1", lease(holderA, at, at.Add(time.Hour))); !ok {
 			t.Fatalf("setup claim failed")
 		}
 		if err := repo.Release(ctx, "tx-1", holderB); err != nil {
 			t.Fatalf("foreign release must not error: %v", err)
 		}
-		ok, err := repo.Claim(ctx, "tx-1", lease(holderB, at.Add(30*time.Minute)))
+		ok, err := repo.Claim(ctx, "tx-1", lease(holderB, at, at.Add(30*time.Minute)))
 		if ok || err != nil {
 			t.Fatalf("foreign release must not drop the lease, got ok=%v err=%v", ok, err)
 		}
@@ -496,7 +509,7 @@ func runLease(t *testing.T, newStore newStoreFunc) {
 
 	t.Run("claim does not refresh staleness", func(t *testing.T) {
 		repo := newRecord(t)
-		if ok, _ := repo.Claim(ctx, "tx-1", lease(holderA, at.Add(time.Hour))); !ok {
+		if ok, _ := repo.Claim(ctx, "tx-1", lease(holderA, at, at.Add(time.Hour))); !ok {
 			t.Fatalf("setup claim failed")
 		}
 		got, err := repo.FindStale(ctx, transaction.StaleQuery{
@@ -513,10 +526,13 @@ func runLease(t *testing.T, newStore newStoreFunc) {
 
 	t.Run("validates the lease", func(t *testing.T) {
 		repo := newRecord(t)
-		if _, err := repo.Claim(ctx, "tx-1", transaction.Lease{Holder: holderA}); err == nil {
-			t.Fatalf("lease without expiry must be rejected")
+		if _, err := repo.Claim(ctx, "tx-1", transaction.Lease{Holder: holderA, ExpiresAt: at.Add(time.Hour)}); err == nil {
+			t.Fatalf("lease without claim instant must be rejected")
 		}
-		if _, err := repo.Claim(ctx, "tx-1", transaction.Lease{ExpiresAt: at}); err == nil {
+		if _, err := repo.Claim(ctx, "tx-1", transaction.Lease{Holder: holderA, At: at, ExpiresAt: at}); err == nil {
+			t.Fatalf("lease expiring at the claim instant must be rejected")
+		}
+		if _, err := repo.Claim(ctx, "tx-1", transaction.Lease{At: at, ExpiresAt: at.Add(time.Hour)}); err == nil {
 			t.Fatalf("lease without holder must be rejected")
 		}
 	})

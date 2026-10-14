@@ -67,9 +67,11 @@ func TestLeaseValidate(t *testing.T) {
 		lease   Lease
 		wantErr bool
 	}{
-		{"valid", Lease{Holder: "worker-1", ExpiresAt: at}, false},
-		{"no holder", Lease{ExpiresAt: at}, true},
-		{"no expiry", Lease{Holder: "worker-1"}, true},
+		{"valid", Lease{Holder: "worker-1", At: at, ExpiresAt: at.Add(time.Hour)}, false},
+		{"no holder", Lease{At: at, ExpiresAt: at.Add(time.Hour)}, true},
+		{"no claim instant", Lease{Holder: "worker-1", ExpiresAt: at.Add(time.Hour)}, true},
+		{"no expiry", Lease{Holder: "worker-1", At: at}, true},
+		{"expiry at the claim instant", Lease{Holder: "worker-1", At: at, ExpiresAt: at}, true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

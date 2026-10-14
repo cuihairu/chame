@@ -154,10 +154,10 @@ func (s *Store) FindStale(_ context.Context, q transaction.StaleQuery) ([]transa
 }
 
 // Claim implements transaction.Repository. Expiry is judged against the
-// incoming lease's expiry — the caller's clock decides, which keeps the
-// store clock-free and deterministic. Claims never touch UpdatedAt: a
-// claimed-but-stuck record must still reappear in later scans once its
-// lease lapses (§10.4).
+// claim instant the caller supplies, which keeps the store clock-free and
+// tests deterministic: a still-valid lease blocks, whatever its owner.
+// Claims never touch UpdatedAt: a claimed-but-stuck record must still
+// reappear in later scans once its lease lapses (§10.4).
 func (s *Store) Claim(_ context.Context, id transaction.TransactionID, lease transaction.Lease) (bool, error) {
 	if err := lease.Validate(); err != nil {
 		return false, err
@@ -168,7 +168,7 @@ func (s *Store) Claim(_ context.Context, id transaction.TransactionID, lease tra
 		return false, fmt.Errorf("%w: %s", transaction.ErrRecordNotFound, id)
 	}
 	held, ok := s.leases[id]
-	if ok && held.Holder != lease.Holder && held.ExpiresAt.After(lease.ExpiresAt) {
+	if ok && held.Holder != lease.Holder && held.ExpiresAt.After(lease.At) {
 		return false, nil // still held by someone else
 	}
 	s.leases[id] = lease

@@ -85,19 +85,24 @@ func (q StaleQuery) Validate() error {
 type Lease struct {
 	// Holder identifies the claiming worker (instance id, worker name).
 	Holder string
-	// ExpiresAt is when the claim lapses. Zero means no expiry, which is
-	// only legal for single-instance deployments and rejected here to
-	// keep the contract uniform.
+	// At is the instant the claim is made, in the caller's clock. The
+	// store judges an existing lease expired when its expiry is not after
+	// At — the store stays clock-free and tests stay deterministic.
+	At time.Time
+	// ExpiresAt is when the new claim lapses. Must be after At.
 	ExpiresAt time.Time
 }
 
-// Validate requires a holder and an expiry.
+// Validate requires a holder and a sane time window.
 func (l Lease) Validate() error {
 	if l.Holder == "" {
 		return fmt.Errorf("lease: holder must not be empty")
 	}
-	if l.ExpiresAt.IsZero() {
-		return fmt.Errorf("lease: expiry must be set")
+	if l.At.IsZero() {
+		return fmt.Errorf("lease: claim instant must be set")
+	}
+	if !l.ExpiresAt.After(l.At) {
+		return fmt.Errorf("lease: expiry must be after the claim instant")
 	}
 	return nil
 }
@@ -143,9 +148,9 @@ type Repository interface {
 	// FindStale returns matching records oldest-first (§10.4 scan).
 	FindStale(ctx context.Context, q StaleQuery) ([]Transaction, error)
 	// Claim attempts to lease the record to lease.Holder. It reports
-	// success when the record is unclaimed, the previous lease expired,
-	// or the previous lease belongs to the same holder (renewal). A
-	// missing record fails with ErrRecordNotFound.
+	// success when the record is unclaimed, the previous lease expired at
+	// or before lease.At, or the previous lease belongs to the same
+	// holder (renewal). A missing record fails with ErrRecordNotFound.
 	Claim(ctx context.Context, id TransactionID, lease Lease) (bool, error)
 	// Release drops the lease when it belongs to holder. A lease held by
 	// someone else is left alone — the stale worker releasing after a
