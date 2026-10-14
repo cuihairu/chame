@@ -99,3 +99,71 @@ func TestRegistryAddHealthCheck(t *testing.T) {
 		t.Error("nil checker should be rejected")
 	}
 }
+
+func TestRegistryAddTask(t *testing.T) {
+	s := NewStore()
+	r := NewRegistry(s, "m1")
+	if err := r.AddTask("", func(ctx context.Context) error { return nil }); err == nil {
+		t.Error("empty task name should be rejected")
+	}
+	if err := r.AddTask("worker", nil); err == nil {
+		t.Error("nil task should be rejected")
+	}
+	if err := r.AddTask("worker", func(ctx context.Context) error { return nil }); err != nil {
+		t.Fatalf("add: %v", err)
+	}
+	if err := r.AddTask("worker", func(ctx context.Context) error { return nil }); err == nil {
+		t.Error("duplicate task in one module should be rejected")
+	}
+	// Another module may reuse the name: ownership is per module.
+	r2 := NewRegistry(s, "m2")
+	if err := r2.AddTask("worker", func(ctx context.Context) error { return nil }); err != nil {
+		t.Fatalf("add: %v", err)
+	}
+
+	tasks := s.Tasks()
+	if len(tasks) != 2 {
+		t.Fatalf("want 2 tasks, got %d", len(tasks))
+	}
+	if tasks[0].Owner != "m1" || tasks[1].Owner != "m2" {
+		t.Fatalf("tasks should sort by owner: %+v", tasks)
+	}
+}
+
+func TestRegistryAddEventHandler(t *testing.T) {
+	s := NewStore()
+	r1 := NewRegistry(s, "m1")
+	r2 := NewRegistry(s, "m2")
+
+	handler := func(ctx context.Context, ev any) error { return nil }
+	if err := r1.AddEventHandler("deposit.detected", handler); err != nil {
+		t.Fatalf("add: %v", err)
+	}
+	if err := r1.AddEventHandler("deposit.detected", handler); err == nil {
+		t.Error("duplicate event type should be rejected")
+	}
+	if err := r2.AddEventHandler("deposit.detected", handler); err == nil {
+		t.Error("a type claimed by another module should be rejected")
+	}
+	if err := r1.AddEventHandler("", handler); err == nil {
+		t.Error("empty event type should be rejected")
+	}
+	if err := r1.AddEventHandler("withdrawn.detected", nil); err == nil {
+		t.Error("nil handler should be rejected")
+	}
+	if err := r2.AddEventHandler("withdrawn.detected", handler); err != nil {
+		t.Fatalf("add: %v", err)
+	}
+
+	types := s.HandlerTypes()
+	if len(types) != 2 || types[0] != "deposit.detected" || types[1] != "withdrawn.detected" {
+		t.Fatalf("handler types should be sorted: %v", types)
+	}
+	v, ok := r2.EventHandler("deposit.detected")
+	if !ok || v == nil {
+		t.Fatal("cross-module handler read failed")
+	}
+	if _, ok := s.EventHandler("missing"); ok {
+		t.Error("missing event type should not be found")
+	}
+}

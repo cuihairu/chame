@@ -6,6 +6,7 @@ package module
 import (
 	"context"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/cuihairu/chame/core/capability"
@@ -85,11 +86,14 @@ func (i Info) Validate(name string) error {
 }
 
 // Store is the runtime-wide registration state: named capabilities,
-// health checks, and the module that published each entry. One Store
-// belongs to one Runtime; Registry values are per-module views over it.
+// health checks, background tasks, event handlers, and the module that
+// published each entry. One Store belongs to one Runtime; Registry values
+// are per-module views over it.
 type Store struct {
 	capabilities map[capability.Name]entry
 	healthChecks *health.Registry
+	tasks        map[string]TaskRegistration
+	handlers     map[string]entry
 }
 
 type entry struct {
@@ -97,16 +101,69 @@ type entry struct {
 	owner string
 }
 
+// Task is a long-running background worker (spec §4.3): the runtime
+// starts every registered task after all modules have started and
+// cancels it before modules stop. A task must return when its context is
+// done; it owns its own retry policy inside the loop.
+type Task func(ctx context.Context) error
+
+// TaskRegistration is one background task as the runtime sees it.
+type TaskRegistration struct {
+	// Name is the task's name, unique within its owning module.
+	Name string
+	// Owner is the module that registered the task.
+	Owner string
+	// Task is the worker body.
+	Task Task
+}
+
 // NewStore creates the shared store for one runtime.
 func NewStore() *Store {
 	return &Store{
 		capabilities: make(map[capability.Name]entry),
 		healthChecks: health.NewRegistry(),
+		tasks:        make(map[string]TaskRegistration),
+		handlers:     make(map[string]entry),
 	}
 }
 
 // HealthChecks exposes the aggregated health registry.
 func (s *Store) HealthChecks() *health.Registry { return s.healthChecks }
+
+// Tasks lists every registered background task in registration order,
+// which is module start order.
+func (s *Store) Tasks() []TaskRegistration {
+	out := make([]TaskRegistration, 0, len(s.tasks))
+	for _, t := range s.tasks {
+		out = append(out, t)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].Owner < out[j].Owner || (out[i].Owner == out[j].Owner && out[i].Name < out[j].Name)
+	})
+	return out
+}
+
+// EventHandler returns the handler registered for one normalized event
+// type. The value is opaque here by the same policy as the capability
+// store: the typed contract — a Handler in the eventing application — is
+// asserted by the consumer.
+func (s *Store) EventHandler(eventType string) (any, bool) {
+	e, ok := s.handlers[eventType]
+	if !ok {
+		return nil, false
+	}
+	return e.value, true
+}
+
+// HandlerTypes lists every event type that has a handler, sorted.
+func (s *Store) HandlerTypes() []string {
+	out := make([]string, 0, len(s.handlers))
+	for t := range s.handlers {
+		out = append(out, t)
+	}
+	sort.Strings(out)
+	return out
+}
 
 // Put publishes v under the capability name on behalf of owner. The name
 // may be claimed once across the runtime; later claims are rejected
@@ -166,4 +223,57 @@ func (r Registry) AddHealthCheck(name string, c health.Checker) error {
 		return fmt.Errorf("module %q: %w", r.owner, err)
 	}
 	return nil
+}
+
+// AddTask registers a long-running background task owned by the module
+// (spec §4.3). The runtime starts it after all modules have started and
+// cancels it before modules stop; it must honor the context. A duplicate
+// (module, task name) pair is a registration error.
+func (r Registry) AddTask(name string, t Task) error {
+	if name == "" {
+		return fmt.Errorf("module %q: task name must not be empty", r.owner)
+	}
+	if t == nil {
+		return fmt.Errorf("module %q: task %q must not be nil", r.owner, name)
+	}
+	key := r.owner + "\x00" + name
+	if _, dup := r.store.tasks[key]; dup {
+		return fmt.Errorf("module %q: task %q is already registered", r.owner, name)
+	}
+	r.store.tasks[key] = TaskRegistration{Name: name, Owner: r.owner, Task: t}
+	return nil
+}
+
+// AddEventHandler registers the handler for one normalized event type
+// (spec §4.3, §11.4). The handler value is opaque here by the same
+// policy as the capability store: the typed contract belongs to the
+// eventing application, which binds the registrations before the event
+// sources start. One handler per event type: fan-out is the handler's
+// job, and a duplicate registration is a configuration error.
+func (r Registry) AddEventHandler(eventType string, h any) error {
+	if eventType == "" {
+		return fmt.Errorf("module %q: event type must not be empty", r.owner)
+	}
+	if h == nil {
+		return fmt.Errorf("module %q: handler for event type %q must not be nil", r.owner, eventType)
+	}
+	if prev, dup := r.store.handlers[eventType]; dup {
+		return fmt.Errorf("module %q: event type %q already has a handler from module %q",
+			r.owner, eventType, prev.owner)
+	}
+	r.store.handlers[eventType] = entry{value: h, owner: r.owner}
+	return nil
+}
+
+// EventHandler returns the handler registered for one event type, typed
+// by the caller.
+func (r Registry) EventHandler(eventType string) (any, bool) {
+	return r.store.EventHandler(eventType)
+}
+
+// HandlerTypes lists every event type that has a handler, sorted. During
+// Register only earlier-initialized modules are visible; by Start all
+// are.
+func (r Registry) HandlerTypes() []string {
+	return r.store.HandlerTypes()
 }

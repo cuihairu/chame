@@ -57,6 +57,8 @@ type Runtime struct {
 	clock           clock.Clock
 	shutdownTimeout time.Duration
 	started         []*node // modules started so far, in start order
+	taskCancel      context.CancelFunc
+	taskWG          sync.WaitGroup
 }
 
 // Option configures a Runtime.
@@ -195,8 +197,78 @@ func (r *Runtime) Start(ctx context.Context) error {
 	if err := r.setState(lifecycle.StateRunning); err != nil {
 		return &PhaseError{Phase: lifecycle.StateRunning, Err: err}
 	}
-	r.logger.Info("runtime started", slog.Int("modules", len(order)))
+	// Background tasks (spec §4.3) start after every module is online and
+	// are cancelled before the first module stops. They are registered on
+	// the wait group while the lock is held, so a concurrent Stop cannot
+	// observe a started runtime with unregistered tasks.
+	tasks := r.store.Tasks()
+	if len(tasks) > 0 {
+		taskCtx, cancel := context.WithCancel(context.Background())
+		r.taskCancel = cancel
+		for _, t := range tasks {
+			r.taskWG.Add(1)
+			go r.runTask(taskCtx, t)
+		}
+	}
+	r.logger.Info("runtime started",
+		slog.Int("modules", len(order)),
+		slog.Int("tasks", len(tasks)))
 	return nil
+}
+
+// runTask runs one background task: it logs the exit, recovers a panic,
+// and never takes the runtime down with it. A task that exits before its
+// context is done is a misbehaving worker: the first release does not
+// restart it (spec §4 leaves restart policy to the application), so the
+// error is loud.
+func (r *Runtime) runTask(ctx context.Context, t module.TaskRegistration) {
+	defer r.taskWG.Done()
+	mlog := logging.WithModule(r.logger, t.Owner)
+	mlog.Info("starting task", slog.String("task", t.Name))
+	err := r.safeTask(ctx, t.Task)
+	if ctx.Err() != nil {
+		mlog.Info("task stopped", slog.String("task", t.Name))
+		return
+	}
+	if err != nil {
+		mlog.Error("task exited before shutdown", slog.String("task", t.Name), slog.String("err", err.Error()))
+		return
+	}
+	mlog.Warn("task exited without error before shutdown", slog.String("task", t.Name))
+}
+
+// safeTask runs a task body and turns a panic into an error so one broken
+// worker cannot take the process down.
+func (r *Runtime) safeTask(ctx context.Context, t module.Task) (err error) {
+	defer func() {
+		if p := recover(); p != nil {
+			err = fmt.Errorf("task panicked: %v", p)
+		}
+	}()
+	return t(ctx)
+}
+
+// stopTasks cancels the background task context and waits for the tasks
+// to exit, bounded by the shutdown budget: a worker that ignores its
+// deadline cannot block the stop sequence (spec §4.5).
+func (r *Runtime) stopTasks(budget time.Duration) {
+	r.mu.Lock()
+	cancel := r.taskCancel
+	r.mu.Unlock()
+	if cancel == nil {
+		return
+	}
+	cancel()
+	done := make(chan struct{})
+	go func() {
+		r.taskWG.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(budget):
+		r.logger.Warn("background tasks ignored the shutdown deadline")
+	}
 }
 
 // finishToStoppedLocked walks Stopping -> Stopped; caller holds the lock.
@@ -239,6 +311,9 @@ func (r *Runtime) Stop(ctx context.Context) error {
 	r.mu.Unlock()
 
 	r.logger.Info("runtime stopping")
+	// Background tasks stop first: they use module resources, so modules
+	// release only after the workers are gone (spec §4.5 order).
+	r.stopTasks(r.shutdownTimeout)
 	errs := r.stopStarted("stop")
 
 	r.mu.Lock()

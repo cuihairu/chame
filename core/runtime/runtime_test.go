@@ -438,3 +438,134 @@ func (m *healthModule) Register(r module.Registry) error {
 }
 func (m *healthModule) Start(ctx context.Context) error { return nil }
 func (m *healthModule) Stop(ctx context.Context) error  { return nil }
+
+// taskModule registers one background task through the registry (spec
+// §4.3) and records what the task observed. The recorder is locked: the
+// task runs on its own goroutine.
+type taskModule struct {
+	name string
+	body func(ctx context.Context) error
+
+	mu     sync.Mutex
+	events []string
+}
+
+func (m *taskModule) Name() string { return m.name }
+func (m *taskModule) Register(r module.Registry) error {
+	return r.AddTask("worker", func(ctx context.Context) error {
+		m.append("task:start:" + m.name)
+		defer m.append("task:done:" + m.name) // survives a panicking body
+		return m.body(ctx)
+	})
+}
+func (m *taskModule) Start(ctx context.Context) error { return nil }
+func (m *taskModule) Stop(ctx context.Context) error  { return nil }
+
+func (m *taskModule) append(e string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.events = append(m.events, e)
+}
+
+func (m *taskModule) drain() []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return append([]string(nil), m.events...)
+}
+
+func waitForTaskEvent(t *testing.T, m *taskModule, want string, within time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(within)
+	for time.Now().Before(deadline) {
+		for _, e := range m.drain() {
+			if e == want {
+				return
+			}
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatalf("event %q never happened, got %v", want, m.drain())
+}
+
+func TestTaskLifecycleWithRuntime(t *testing.T) {
+	m := &taskModule{name: "eventing", body: func(ctx context.Context) error {
+		<-ctx.Done()
+		return ctx.Err()
+	}}
+	r := New(WithShutdownTimeout(2 * time.Second))
+	if err := r.Register(m, module.Info{}); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+	if err := r.Start(context.Background()); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	waitForTaskEvent(t, m, "task:start:eventing", 2*time.Second)
+
+	if err := r.Stop(context.Background()); err != nil {
+		t.Fatalf("stop: %v", err)
+	}
+	got := m.drain()
+	// The task starts after the modules and stops, cancelled, before the
+	// first module stop (spec §4.5 order).
+	if len(got) != 2 || got[0] != "task:start:eventing" || got[1] != "task:done:eventing" {
+		t.Fatalf("want the task started and cancelled, got %v", got)
+	}
+	if r.State() != lifecycle.StateStopped {
+		t.Fatalf("state: %s", r.State())
+	}
+}
+
+func TestTaskPanicDoesNotTakeTheRuntimeDown(t *testing.T) {
+	m := &taskModule{name: "chaos", body: func(ctx context.Context) error {
+		panic("worker exploded")
+	}}
+	r := New(WithShutdownTimeout(2 * time.Second))
+	if err := r.Register(m, module.Info{}); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+	if err := r.Start(context.Background()); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	waitForTaskEvent(t, m, "task:done:chaos", 2*time.Second)
+	if err := r.Stop(context.Background()); err != nil {
+		t.Fatalf("a panicking task must not break the stop sequence: %v", err)
+	}
+}
+
+func TestTaskEarlyExitLeavesRuntimeUsable(t *testing.T) {
+	m := &taskModule{name: "broken", body: func(ctx context.Context) error {
+		return errors.New("cannot connect")
+	}}
+	r := New(WithShutdownTimeout(2 * time.Second))
+	if err := r.Register(m, module.Info{}); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+	if err := r.Start(context.Background()); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	waitForTaskEvent(t, m, "task:done:broken", 2*time.Second)
+	// The first release does not restart a dead task, but the runtime
+	// itself stays healthy and stops cleanly.
+	if err := r.Stop(context.Background()); err != nil {
+		t.Fatalf("stop: %v", err)
+	}
+}
+
+func TestTaskIgnoringDeadlineCannotBlockStop(t *testing.T) {
+	hang := &taskModule{name: "hang", body: func(ctx context.Context) error {
+		<-make(chan struct{}) // ignores the context on purpose
+		return nil
+	}}
+	r := New(WithShutdownTimeout(50 * time.Millisecond))
+	if err := r.Register(hang, module.Info{}); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+	if err := r.Start(context.Background()); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	started := time.Now()
+	_ = r.Stop(context.Background())
+	if elapsed := time.Since(started); elapsed > 2*time.Second {
+		t.Fatalf("a hanging task must not block the stop sequence, took %s", elapsed)
+	}
+}
