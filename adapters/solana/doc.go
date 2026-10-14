@@ -9,7 +9,10 @@
 // defined here.
 //
 // Phase 4 scope (spec §19, ADR-0003): read-only capabilities. Transaction
-// building, signing, submission, blockhash-expiry recovery, and finality
-// tracking land with the transaction capability in Phase 5; asking for
-// them here returns an explicit unsupported-capability error.
+// building, submission, blockhash-expiry recovery, and finality tracking
+// land with the transaction capability in Phase 5; asking for them here
+// returns an explicit unsupported-capability error. The signing surface
+// (spec §12) starts at the development signer: ed25519 signing of exact
+// message bytes over a held key, unsafe by declaration and refused in
+// production environments.
 package solana

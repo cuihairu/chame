@@ -8,6 +8,9 @@
 // here.
 //
 // Phase 3 scope (spec §19): read-only capabilities. Transaction
-// building, signing, submission, and finality tracking land with the
-// transaction capability in later phases.
+// building, submission, and finality tracking land with the transaction
+// capability in later phases. The signing surface (spec §12) starts at
+// the development signer: EIP-191 personal-message signing over a held
+// key, unsafe by declaration and refused in production environments;
+// transaction signing joins when the transaction capability lands.
 package evm

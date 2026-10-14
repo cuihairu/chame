@@ -61,6 +61,43 @@ func TestLocalDevSignerRefusesProduction(t *testing.T) {
 	}
 }
 
+func TestGenerateDevKey(t *testing.T) {
+	key, err := GenerateDevKey()
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+	addr, err := DevKeyAddress(key)
+	if err != nil {
+		t.Fatalf("address: %v", err)
+	}
+	if addr.Family != identifiers.FamilyEVM || addr.Value == "" {
+		t.Fatalf("address = %+v", addr)
+	}
+	// The derived address revalidates under the EIP-55 rules and the
+	// key signs under it through the full allow-list path.
+	ref, err := signer.NewAccountRef(identifiers.NetworkID{Family: identifiers.FamilyEVM, Name: "mainnet", ChainID: "1"}, addr)
+	if err != nil {
+		t.Fatalf("ref: %v", err)
+	}
+	s, err := NewLocalDevSigner(config.EnvDevelopment, key, ref)
+	if err != nil {
+		t.Fatalf("signer: %v", err)
+	}
+	signed, err := s.Sign(context.Background(), signer.Request{
+		Network: ref.Network, Account: addr, Type: signer.SigEVMMessage, Payload: []byte("p"),
+	})
+	if err != nil {
+		t.Fatalf("sign: %v", err)
+	}
+	ok, err := VerifyPersonalMessage(addr, []byte("p"), signed.Signature)
+	if err != nil || !ok {
+		t.Errorf("generated key does not self-verify (err %v, ok %v)", err, ok)
+	}
+	if _, err := DevKeyAddress(nil); err == nil {
+		t.Errorf("nil key accepted")
+	}
+}
+
 func TestLocalDevSignerRequiresOwnAccount(t *testing.T) {
 	other, err := identifiers.NewEVMAddress("0x0000000000000000000000000000000000000001")
 	if err != nil {

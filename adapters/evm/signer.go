@@ -49,7 +49,7 @@ func NewLocalDevSigner(env string, key *ecdsa.PrivateKey, accounts ...signer.Acc
 	if err := list.Validate(); err != nil {
 		return nil, fmt.Errorf("evm: local development signer: %w", err)
 	}
-	account, err := identifiers.NewEVMAddress(crypto.PubkeyToAddress(key.PublicKey).Hex())
+	account, err := DevKeyAddress(key)
 	if err != nil {
 		return nil, fmt.Errorf("evm: local development signer: %w", err)
 	}
@@ -84,6 +84,28 @@ func DevKeyFromHex(hexKey string) (*ecdsa.PrivateKey, error) {
 	key, err := crypto.HexToECDSA(hexKey)
 	if err != nil {
 		return nil, fmt.Errorf("evm: dev key: %w", err)
+	}
+	return key, nil
+}
+
+// DevKeyAddress derives the account address of a development key.
+// Wiring uses it to build the allow-list before constructing the
+// signer, whose constructor requires the list.
+func DevKeyAddress(key *ecdsa.PrivateKey) (identifiers.Address, error) {
+	if key == nil {
+		return identifiers.Address{}, fmt.Errorf("evm: dev key address: key must not be nil")
+	}
+	return identifiers.NewEVMAddress(crypto.PubkeyToAddress(key.PublicKey).Hex())
+}
+
+// GenerateDevKey creates a fresh throwaway keypair for examples and
+// scratch scripts. Production deployments never use generated local
+// keys; they wire an implementation of the signer contract instead
+// (spec §12.2).
+func GenerateDevKey() (*ecdsa.PrivateKey, error) {
+	key, err := crypto.GenerateKey()
+	if err != nil {
+		return nil, fmt.Errorf("evm: generate dev key: %w", err)
 	}
 	return key, nil
 }
