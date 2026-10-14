@@ -520,6 +520,19 @@ func runCursors(t *testing.T, newStore newStoreFunc) {
 		if got.RollbackCount != 2 {
 			t.Fatalf("rollbacks must accumulate, got %d", got.RollbackCount)
 		}
+
+		// The audit trail is store-owned: a forward advance must not
+		// erase it (§11.6 step 6).
+		if err := repo.SaveCursor(ctx, event.Cursor{Network: key.Network, SourceType: key.SourceType, BlockHeight: 20, BlockHash: "0xe", UpdatedAt: at.Add(5 * time.Minute)}); err != nil {
+			t.Fatalf("save after rollback: %v", err)
+		}
+		got, err = repo.GetCursor(ctx, key)
+		if err != nil {
+			t.Fatalf("get: %v", err)
+		}
+		if got.RollbackCount != 2 || got.LastRollback.IsZero() {
+			t.Fatalf("an advance must preserve the audit trail: %+v", got)
+		}
 	})
 
 	t.Run("cursors are per source", func(t *testing.T) {

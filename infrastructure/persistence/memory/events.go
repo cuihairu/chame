@@ -226,6 +226,10 @@ func (s *EventStore) SaveCursor(_ context.Context, c event.Cursor) error {
 			return fmt.Errorf("%w: height %d already holds block %s, not %s",
 				event.ErrCursorRegression, c.BlockHeight, stored.BlockHash, c.BlockHash)
 		}
+		// The audit trail is store-owned: a forward advance never erases
+		// a recorded rollback (§11.6 step 6).
+		c.RollbackCount = stored.RollbackCount
+		c.LastRollback = stored.LastRollback
 	}
 	s.cursors[k] = c
 	return nil

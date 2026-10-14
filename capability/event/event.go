@@ -210,7 +210,9 @@ type Cursor struct {
 	// UpdatedAt is when the cursor last moved.
 	UpdatedAt time.Time
 	// RollbackCount and LastRollback record reorganization rollbacks,
-	// the audit trail required by §11.6.
+	// the audit trail required by §11.6 step 6. They are set by
+	// RollbackCursor and preserved across later advances: the caller
+	// never owns the audit state.
 	RollbackCount int
 	LastRollback  time.Time
 }
