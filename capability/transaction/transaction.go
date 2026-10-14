@@ -139,6 +139,9 @@ type Transaction struct {
 	// IdempotencyKey is the application-level key within its scope, if
 	// any (spec §10.1).
 	IdempotencyKey string `json:"idempotency_key,omitempty"`
+	// IdempotencyScope is where the key is unique: application/tenant
+	// plus operation type (§10.1). Zero when no key is set.
+	IdempotencyScope IdempotencyScope `json:"idempotency_scope,omitempty"`
 	// RequestHash fingerprints the business request that produced this
 	// transaction; equal keys with different hashes conflict (§10.1).
 	RequestHash string `json:"request_hash,omitempty"`
