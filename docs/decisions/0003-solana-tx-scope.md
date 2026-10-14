@@ -31,3 +31,10 @@
 - 不支持的能力返回显式错误的契约测试。
 - 不同 Commitment 处理的测试（§19 Phase 4 验收）。
 - Blockhash 过期恢复策略在 Phase 5 以故障注入测试覆盖（模拟提交结果未知）。
+
+## 集成落地（2026-10-15，阶段四）
+
+- SDK 模块路径：ADR-0001 列出的 `github.com/solana-foundation/solana-go` 不被该模块认领（其 `go.mod` 声明自身为 `github.com/gagliardetto/solana-go`），集成时按 ADR-0001 的既定口径落为 `github.com/gagliardetto/solana-go` v1.25.0（Apache-2.0）。两处路径指向同一上游，版本线一致（均到 v1.25.0）。
+- 隔离验证：`go list -deps` 确认 `adapters/evm` 不依赖 solana-go、`adapters/solana` 不依赖 go-ethereum、`core/` 不依赖任何适配器；`go doc` 确认导出面无 SDK 类型。
+- 可测试性：SDK 客户端藏在未导出的 `rpcClient` seam 之后，`Dialer` 注入假客户端，单元测试不触真实 RPC（§16）。
+- 不支持的写入能力通过 `Adapter.UnsupportedCapability` 返回 §14.1 `UnsupportedCapability` 分类错误（显式契约，非空实现伪装）。

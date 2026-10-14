@@ -11,7 +11,7 @@
 ## 决策
 
 - **EVM**：`github.com/ethereum/go-ethereum`（`ethclient` + `accounts/abi`）。
-- **Solana**：`solana-go`（原 `github.com/gagliardetto/solana-go`，2026 年已移交 Solana Foundation 维护，仓库 `github.com/solana-foundation/solana-go`，v1.22+ 持续发版）。集成时以 `go get` 实际解析到的模块路径为准。
+- **Solana**：`solana-go`（原 `github.com/gagliardetto/solana-go`，2026 年已移交 Solana Foundation 维护，仓库 `github.com/solana-foundation/solana-go`，v1.22+ 持续发版）。集成时以 `go get` 实际解析到的模块路径为准。—— 已解析（2026-10-15，阶段四）：`solana-foundation` 路径不被该模块认领（其 `go.mod` 声明自身为 `github.com/gagliardetto/solana-go`），实落 **`github.com/gagliardetto/solana-go` v1.25.0**，见 ADR-0003 集成落地。
 
 ## 理由（按 §23 比较维度）
 
