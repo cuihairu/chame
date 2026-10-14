@@ -16,7 +16,7 @@
 ## 分期（规格 §19）
 
 - [x] 阶段一：Runtime + 配置系统 + 公共能力层（§2 §4 §5 §6）—— runtime 生命周期状态机/依赖图/优雅关闭、module Registry、config 分层加载与 §5.4 校验、identifiers（NetworkID/Address/Amount/AssetID）、health/logging/clock、capability 声明检测、examples/minimal；51 个测试函数全绿（含 -race）
-- [ ] 阶段二：交易公共模型与状态机（§9）
+- [x] 阶段二：交易公共模型与状态机（§9）—— `capability/transaction`：OperationID/TransactionID、12 状态枚举（created→…→finalized/reverted/failed + reorged/unknown 表达不确定性）、合法转换矩阵（终态冻结、超时进 unknown 不进 failed、reorged 仅可回 unknown）、Transaction 记录（Network 钉死、IdempotencyKey/RequestHash、ChainData 归适配器）、TransitionTo 写时复制；57 个测试函数全绿（含 -race）
 - [ ] 阶段三：EVM Adapter（§7）
 - [ ] 阶段四：Solana Adapter（§8）
 - [ ] 阶段五：幂等 / 持久化 / 恢复（§10）

@@ -31,19 +31,21 @@ behind an adapter so the game side keeps one contract.
 
 ## Status
 
-**Phase 1 landed.** The full spec lives in
+**Phases 1–2 landed.** The full spec lives in
 [`docs/design/chame-spec.md`](docs/design/chame-spec.md) — 24 chapters covering
 architecture, adapters, transaction state machine, idempotency, event handling,
 signing, error model, observability, testing, CI, phased rollout, and a
 Definition of Done.
 
 Shipped so far: the runtime lifecycle container (module registry, dependency
-graph, graceful stop), the layered config system, and the chain-agnostic
-identity model (`NetworkID`, `Address`, `Amount`, `AssetID`). Architecture
-decisions live in [`docs/design/decisions.md`](docs/design/decisions.md) with
-detailed ADRs in [`docs/decisions/`](docs/decisions/). Phased implementation is
-tracked in [`todo.md`](todo.md) — next: the shared transaction model and state
-machine.
+graph, graceful stop), the layered config system, the chain-agnostic identity
+model (`NetworkID`, `Address`, `Amount`, `AssetID`), and the shared transaction
+model with its status state machine (`capability/transaction` — uncertainty
+expressed via explicit unknown/reorged statuses, terminal states frozen).
+Architecture decisions live in
+[`docs/design/decisions.md`](docs/design/decisions.md) with detailed ADRs in
+[`docs/decisions/`](docs/decisions/). Phased implementation is tracked in
+[`todo.md`](todo.md) — next: the EVM adapter.
 
 ## Development
 
