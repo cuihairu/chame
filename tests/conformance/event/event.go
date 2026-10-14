@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"reflect"
 	"testing"
 	"time"
 
@@ -65,6 +66,17 @@ func mustCreate(t *testing.T, repo event.Repository, ev event.Event) {
 	}
 }
 
+// sameJSON compares two payloads semantically: a durable store may keep
+// them in a JSON column that normalizes the encoding (whitespace, object
+// key order), and consumers decode rather than byte-compare.
+func sameJSON(a, b json.RawMessage) bool {
+	var av, bv any
+	if json.Unmarshal(a, &av) != nil || json.Unmarshal(b, &bv) != nil {
+		return false
+	}
+	return reflect.DeepEqual(av, bv)
+}
+
 // runIdentity pins §11.3: one stored record per event identity. A
 // transaction hash alone is not an identity — the position components
 // separate events of the same transaction — and a re-poll of an already
@@ -108,7 +120,7 @@ func runIdentity(t *testing.T, newStore newStoreFunc) {
 			got.BlockHeight != base.BlockHeight || got.Index != base.Index ||
 			got.Type != base.Type || got.Finality != base.Finality ||
 			got.Processing != base.Processing || got.Observation != base.Observation ||
-			string(got.Data) != string(base.Data) || got.DecodeVersion != base.DecodeVersion ||
+			!sameJSON(got.Data, base.Data) || got.DecodeVersion != base.DecodeVersion ||
 			!got.At.Equal(base.At) {
 			t.Fatalf("round trip mismatch:\n got %+v\nwant %+v", got, base)
 		}

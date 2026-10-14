@@ -1,8 +1,9 @@
 // Package sql provides the PostgreSQL persistence implementation for
-// transaction records (spec §10.5, ADR-0002): database/sql with the pgx
-// stdlib driver, explicit versioned migrations embedded from schema/, and
-// the idempotency, state-machine, and lease semantics enforced in SQL so
-// multiple application instances coordinate through the database.
+// transaction and event records (spec §10.5, §11, ADR-0002): database/sql
+// with the pgx stdlib driver, explicit versioned migrations embedded from
+// schema/, and the idempotency, state-machine, lease, and cursor
+// semantics enforced in SQL so multiple application instances coordinate
+// through the database.
 package sql
 
 import (

@@ -99,9 +99,11 @@ type CursorProgress struct {
 //     detected instead of swallowed. A rollback is always explicit.
 //
 // Data is opaque to the model. Durable implementations persist it by JSON
-// encoding and return json.RawMessage on read. Create never accepts a zero
-// At, CreatedAt or UpdatedAt: pending scans and cursor resume depend on
-// real timestamps.
+// encoding and return json.RawMessage on read; a JSON column may
+// normalize the encoding (whitespace, object key order), so consumers
+// decode the payload instead of comparing it byte for byte. Create never
+// accepts a zero At, CreatedAt or UpdatedAt: pending scans and cursor
+// resume depend on real timestamps.
 type Repository interface {
 	// Create inserts an event record. A record with the same identity
 	// fails with ErrDuplicateEvent, whatever its content.

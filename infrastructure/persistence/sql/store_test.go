@@ -71,6 +71,9 @@ func TestStoreMigrateIsIdempotent(t *testing.T) {
 	if counts["0001_transactions"] != 1 {
 		t.Fatalf("0001 must be applied exactly once, got %+v", counts)
 	}
+	if counts["0002_events"] != 1 {
+		t.Fatalf("0002 must be applied exactly once, got %+v", counts)
+	}
 }
 
 func TestStoreOpenRejectsAnUnreachableDSN(t *testing.T) {
