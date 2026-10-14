@@ -17,7 +17,7 @@
 
 - [x] 阶段一：Runtime + 配置系统 + 公共能力层（§2 §4 §5 §6）—— runtime 生命周期状态机/依赖图/优雅关闭、module Registry、config 分层加载与 §5.4 校验、identifiers（NetworkID/Address/Amount/AssetID）、health/logging/clock、capability 声明检测、examples/minimal；51 个测试函数全绿（含 -race）
 - [x] 阶段二：交易公共模型与状态机（§9）—— `capability/transaction`：OperationID/TransactionID、12 状态枚举（created→…→finalized/reverted/failed + reorged/unknown 表达不确定性）、合法转换矩阵（终态冻结、超时进 unknown 不进 failed、reorged 仅可回 unknown）、Transaction 记录（Network 钉死、IdempotencyKey/RequestHash、ChainData 归适配器）、TransitionTo 写时复制；57 个测试函数全绿（含 -race）
-- [ ] 阶段三：EVM Adapter（§7）
+- [x] 阶段三：EVM Adapter（§7，只读能力）—— `adapters/evm`：多网络实例（mainnet/base/arbitrum 三元组验证隔离）、Endpoint Pool 读切换（transient 才切换、identity 不切换）、启动时逐端点 Chain ID 校验（不一致=配置错误，不是 outage）、`network.Provider` 健康检查、原生/ERC-20 余额、eth_call、日志读取、基础指标；`core/errors` §14 全量分类与 cause 保留；97 个测试函数全绿（含 -race），全部走假客户端，无真实 RPC
 - [ ] 阶段四：Solana Adapter（§8）
 - [ ] 阶段五：幂等 / 持久化 / 恢复（§10）
 - [ ] 阶段六：链上事件处理（§11）

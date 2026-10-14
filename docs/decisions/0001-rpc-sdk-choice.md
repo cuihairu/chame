@@ -39,3 +39,10 @@
 - 单元测试不访问真实公共 RPC（规格 §19 Phase 3 验收）。
 - `tests/conformance/` 约束两个适配器对同一 capability 契约行为一致。
 - Solana SDK 集成时验证模块路径与许可证字段，写入该阶段报告。
+
+## 集成落地（2026-10-15，阶段三）
+
+- EVM 集成版本 `github.com/ethereum/go-ethereum v1.17.8`，`go mod tidy` 解析的传递依赖已入 `go.sum`。
+- 隔离边界已验证：`go list` 下仅 `adapters/evm` 直接导入该 SDK；`core/`、`capability/` 不导入。
+- SDK 类型未泄漏：`adapters/evm` 对外只暴露 `BlockInfo`、`LogRecord`、`CallQuery`、`LogFilter`、`NetworkStats` 等链无关记录类型，地址与数量走 `core/identifiers`。
+- 单元与集成测试均通过可注入的 `Dialer`/`rpcClient` seam 使用假客户端，不访问真实公共 RPC（规格 §19 阶段三验收）。
