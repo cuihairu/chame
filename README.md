@@ -31,7 +31,7 @@ behind an adapter so the game side keeps one contract.
 
 ## Status
 
-**Phases 1–6 landed.** The full spec lives in
+**Phases 1–7 landed.** The full spec lives in
 [`docs/design/chame-spec.md`](docs/design/chame-spec.md) — 24 chapters covering
 architecture, adapters, transaction state machine, idempotency, event handling,
 signing, error model, observability, testing, CI, phased rollout, and a
@@ -56,10 +56,15 @@ lease-based multi-instance dedup), and on-chain event handling (§11 — the
 shared event model with chain-aware position identities, the event repository
 with cursor persistence and reorg invalidation, the delivery dispatcher with
 at-least-once semantics, finality gating, retry-to-poison and reorg rollback,
-plus registry slots for background tasks and event handlers). Architecture decisions live in
+plus registry slots for background tasks and event handlers), and signing and key
+safety (§12 — the `capability/signer` contract with explicit target
+network and account per request, allow-list authorization, payload-digest
+audit entries, and a redacting secret type; a deterministic test signer;
+the EVM and Solana development signers that refuse production
+environments; `examples/signing`). Architecture decisions live in
 [`docs/design/decisions.md`](docs/design/decisions.md) with detailed ADRs in
 [`docs/decisions/`](docs/decisions/). Phased implementation is tracked in
-[`todo.md`](todo.md) — next: signer and key safety, then account and asset providers.
+[`todo.md`](todo.md) — next: account and asset providers.
 
 ## Development
 
