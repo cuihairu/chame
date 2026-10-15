@@ -2,12 +2,10 @@ package evm
 
 import (
 	"context"
-	"errors"
 	"math/big"
 	"testing"
 	"time"
 
-	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 
 	"github.com/cuihairu/chame/capability/signer"
@@ -417,10 +415,35 @@ func TestNetworkBuildHonorsDeadline(t *testing.T) {
 	if elapsed := time.Since(start); elapsed > 2*time.Second {
 		t.Errorf("build took %s, want it to stop at the deadline", elapsed)
 	}
-	// The deadline does not hand the nonce back: an abandoned allocation is
-	// still an allocation until the build says it failed for good.
+	// A build never broadcasts, so a timed-out build gives its nonce back
+	// the same way a reverted estimate does.
 	snap := n.NonceCoordinator().Snapshot(sender)
-	if snap.Allocated != 1 || snap.Submitted != 0 {
-		t.Errorf("snapshot = %+v, want one open allocation", snap)
+	if snap.Allocated != 0 || snap.Next != 8 {
+		t.Errorf("snapshot = %+v, want the nonce back in the pool", snap)
+	}
+}
+
+// TestNetworkBuildRefusesAccessListOnLegacyNetwork is the deferred half of
+// the access-list rule: when the caller leaves the fee mechanism to the
+// node, an access list is refused rather than silently dropped once the
+// probe reports a legacy network.
+func TestNetworkBuildRefusesAccessListOnLegacyNetwork(t *testing.T) {
+	fake := newFakeClient(1)
+	fake.withGasPrice(big.NewInt(20_000_000_000))
+	n := testNetwork(t, fake)
+	q := buildQuery()
+	q.GasPrice = nil
+	q.AccessList = []AccessListEntry{{To: mustEVMAddress("0x00000000000000000000000000000000000000ee"), Key: storageKeyHex}}
+
+	_, err := n.Build(context.Background(), q)
+	if err == nil {
+		t.Fatal("Build with an access list on a legacy network: err = nil, want error")
+	}
+	if cat, ok := cherrs.CategoryOf(err); !ok || cat != cherrs.InvalidArgument {
+		t.Errorf("err = %v, want invalid argument", err)
+	}
+	if fake.callCount("suggest_gas_tip_cap") != 1 || fake.callCount("suggest_gas_price") != 0 {
+		t.Errorf("tip queries = %d, price queries = %d, want the probe to decide first",
+			fake.callCount("suggest_gas_tip_cap"), fake.callCount("suggest_gas_price"))
 	}
 }
