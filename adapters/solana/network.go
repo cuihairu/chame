@@ -77,6 +77,19 @@ type SignatureRecord struct {
 	Status string
 }
 
+// BlockSummary is one block's identity (spec §11.5): the event source
+// anchors its cursor on the blockhash, the verifiable position a bare
+// slot number cannot give.
+type BlockSummary struct {
+	// Slot is the block's slot.
+	Slot uint64
+	// Blockhash is the block's identity on the chain.
+	Blockhash string
+	// TimeSec is the estimated production time; zero when the node
+	// reported none.
+	TimeSec uint64
+}
+
 // ConfirmationStatus is the observed confirmation state of one signature
 // (spec §8.2, §8.5: record what was observed).
 type ConfirmationStatus struct {
@@ -472,6 +485,39 @@ func (n *Network) Signatures(ctx context.Context, account identifiers.Address, l
 		recs = append(recs, rec)
 	}
 	return recs, nil
+}
+
+// Block returns the block at slot at the given commitment. A nil summary
+// with a nil error means the node holds no block for the slot (skipped or
+// below its horizon): the position is unverifiable, never a fabricated
+// block.
+func (n *Network) Block(ctx context.Context, slot uint64, commitment Commitment) (*BlockSummary, error) {
+	c := n.commit(commitment)
+	ctx, cancel := n.withTimeout(ctx)
+	defer cancel()
+	n.stats.countRequest()
+	var out *blockResult
+	err := n.pool.call(ctx, n.id.String(), n.opBase+".block", func(rc rpcClient) error {
+		var e error
+		out, e = rc.Block(ctx, slot, &rpcGetBlockOpts{Commitment: c.rpc()})
+		return e
+	})
+	if err != nil {
+		if notFound(err) {
+			return nil, nil
+		}
+		n.stats.countError()
+		return nil, err
+	}
+	if out == nil || out.Blockhash.IsZero() {
+		// A skipped slot has no block: the position is unverifiable.
+		return nil, nil
+	}
+	rec := &BlockSummary{Slot: slot, Blockhash: out.Blockhash.String()}
+	if out.BlockTime != nil {
+		rec.TimeSec = uint64(*out.BlockTime)
+	}
+	return rec, nil
 }
 
 // TransactionStatus reports the node's confirmation state for sig. A nil

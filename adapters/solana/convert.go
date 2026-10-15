@@ -27,6 +27,8 @@ type (
 	rpcGetTokenAccountsOpts        = rpc.GetTokenAccountsOpts
 	transactionResult              = rpc.GetTransactionResult
 	rpcGetTransactionOpts          = rpc.GetTransactionOpts
+	blockResult                    = rpc.GetBlockResult
+	rpcGetBlockOpts                = rpc.GetBlockOpts
 	rpcTransactionSignature        = rpc.TransactionSignature
 	rpcGetSignaturesForAddressOpts = rpc.GetSignaturesForAddressOpts
 	rpcSignatureStatusesResult     = rpc.SignatureStatusesResult

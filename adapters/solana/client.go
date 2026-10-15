@@ -26,6 +26,7 @@ type rpcClient interface {
 	TokenBalance(ctx context.Context, account solana.PublicKey, commitment rpc.CommitmentType) (*rpc.GetTokenAccountBalanceResult, error)
 	TokenAccounts(ctx context.Context, owner solana.PublicKey, conf *rpc.GetTokenAccountsConfig, opts *rpc.GetTokenAccountsOpts) (*rpc.GetTokenAccountsResult, error)
 	Transaction(ctx context.Context, sig solana.Signature, opts *rpc.GetTransactionOpts) (*rpc.GetTransactionResult, error)
+	Block(ctx context.Context, slot uint64, opts *rpc.GetBlockOpts) (*rpc.GetBlockResult, error)
 	Signatures(ctx context.Context, account solana.PublicKey, opts *rpc.GetSignaturesForAddressOpts) ([]*rpc.TransactionSignature, error)
 	SignatureStatus(ctx context.Context, sig solana.Signature) ([]*rpc.SignatureStatusesResult, error)
 	Close() error
@@ -62,6 +63,10 @@ func (s solRPC) TokenAccounts(ctx context.Context, owner solana.PublicKey, conf 
 
 func (s solRPC) Transaction(ctx context.Context, sig solana.Signature, opts *rpc.GetTransactionOpts) (*rpc.GetTransactionResult, error) {
 	return s.c.GetTransaction(ctx, sig, opts)
+}
+
+func (s solRPC) Block(ctx context.Context, slot uint64, opts *rpc.GetBlockOpts) (*rpc.GetBlockResult, error) {
+	return s.c.GetBlockWithOpts(ctx, slot, opts)
 }
 
 func (s solRPC) Signatures(ctx context.Context, account solana.PublicKey, opts *rpc.GetSignaturesForAddressOpts) ([]*rpc.TransactionSignature, error) {

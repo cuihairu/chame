@@ -30,12 +30,17 @@ func testGenesis(seed byte) string { return solanaHashFor(seed).String() }
 
 // testSignature builds a deterministic 64-byte base58 signature.
 func testSignature(seed byte) string {
+	b, _ := sigFor(seed).MarshalText()
+	return string(b)
+}
+
+// sigFor builds the deterministic signature value behind testSignature.
+func sigFor(seed byte) solana.Signature {
 	var s solana.Signature
 	for i := range s {
 		s[i] = seed + byte(i)
 	}
-	b, _ := s.MarshalText()
-	return string(b)
+	return s
 }
 
 // fakeClient is the test double for the RPC seam. Unit tests never touch
@@ -62,6 +67,10 @@ type fakeClient struct {
 	// missingAccounts makes the node report null for these addresses,
 	// like an address it has never seen.
 	missingAccounts map[solana.PublicKey]bool
+
+	// blocksBySlot overrides the block reported for one slot; a slot
+	// without one answers nil, like a skipped slot.
+	blocksBySlot map[uint64]*blockResult
 
 	// Captures.
 	commitments []Commitment
@@ -189,6 +198,16 @@ func (f *fakeClient) TokenBalance(ctx context.Context, account solana.PublicKey,
 	return f.tokenBalance, nil
 }
 
+// withBlock pins the block reported for slot and returns its hash, so
+// tests can assert exact cursor anchors.
+func (f *fakeClient) withBlock(slot uint64, hash solana.Hash) string {
+	if f.blocksBySlot == nil {
+		f.blocksBySlot = map[uint64]*blockResult{}
+	}
+	f.blocksBySlot[slot] = &blockResult{Blockhash: hash}
+	return hash.String()
+}
+
 func (f *fakeClient) TokenAccounts(ctx context.Context, owner solana.PublicKey, conf *rpcGetTokenAccountsConfig, opts *rpcGetTokenAccountsOpts) (*tokenAccountsResult, error) {
 	if err := f.maybeFail("token_accounts"); err != nil {
 		return nil, err
@@ -212,6 +231,22 @@ func (f *fakeClient) Transaction(ctx context.Context, sig solana.Signature, opts
 	}
 	f.mu.Unlock()
 	return f.transaction, nil
+}
+
+func (f *fakeClient) Block(ctx context.Context, slot uint64, opts *rpcGetBlockOpts) (*blockResult, error) {
+	if err := f.maybeFail("block"); err != nil {
+		return nil, err
+	}
+	f.mu.Lock()
+	if opts != nil {
+		f.commitments = append(f.commitments, Commitment(opts.Commitment))
+	}
+	b, ok := f.blocksBySlot[slot]
+	f.mu.Unlock()
+	if !ok {
+		return nil, nil
+	}
+	return b, nil
 }
 
 func (f *fakeClient) Signatures(ctx context.Context, account solana.PublicKey, opts *rpcGetSignaturesForAddressOpts) ([]*rpcTransactionSignature, error) {
