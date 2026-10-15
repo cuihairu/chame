@@ -344,7 +344,7 @@ func (d *Dispatcher) deliverReady(ctx context.Context, src Source, report *Repor
 		}
 		// §11.4: wait for confirmation/finality per configuration.
 		if ev.Finality.Rank() < d.cfg.MinFinality.Rank() {
-			promoted, err := d.promote(ctx, src, ev, now)
+			promoted, err := d.promote(ctx, src, &ev, now)
 			if err != nil {
 				return err
 			}
@@ -372,10 +372,12 @@ func (d *Dispatcher) deliverReady(ctx context.Context, src Source, report *Repor
 }
 
 // promote re-observes one event's finality and stores the promotion. It
-// reports whether the event reached the requirement. An observation
-// failure is transient: the event stays queued for the next tick.
-func (d *Dispatcher) promote(ctx context.Context, src Source, ev event.Event, now time.Time) (bool, error) {
-	finality, err := src.Observe(ctx, ev)
+// reports whether the event reached the requirement, and leaves the
+// promoted state on the record so the handler sees what was persisted
+// (spec §11.4). An observation failure is transient: the event stays
+// queued for the next tick.
+func (d *Dispatcher) promote(ctx context.Context, src Source, ev *event.Event, now time.Time) (bool, error) {
+	finality, err := src.Observe(ctx, *ev)
 	if err != nil {
 		if errors.Is(err, event.ErrPositionUnknown) {
 			return false, nil // position cannot be verified yet: keep waiting

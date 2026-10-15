@@ -151,8 +151,10 @@ type suite struct {
 	disp  *Dispatcher
 	// deliveries records (event id, count) per type.
 	deliveries map[string]int
-	failFor    map[string]error // handler error by event id
-	mu         sync.Mutex
+	// finality records the finality each delivered event carried.
+	finality map[string]event.FinalityState
+	failFor  map[string]error // handler error by event id
+	mu       sync.Mutex
 }
 
 func newSuite(t *testing.T, cfg Config) *suite {
@@ -162,6 +164,7 @@ func newSuite(t *testing.T, cfg Config) *suite {
 		src:        newFakeSource(testNet, event.SourceEVMLog),
 		clock:      &fakeClock{now: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)},
 		deliveries: map[string]int{},
+		finality:   map[string]event.FinalityState{},
 		failFor:    map[string]error{},
 	}
 	d, err := NewDispatcher(s.repo, cfg,
@@ -178,6 +181,7 @@ func newSuite(t *testing.T, cfg Config) *suite {
 			return err
 		}
 		s.deliveries[string(ev.ID)]++
+		s.finality[string(ev.ID)] = ev.Finality
 		return nil
 	}); err != nil {
 		t.Fatalf("handle: %v", err)
@@ -275,6 +279,18 @@ func TestTickWaitsForFinality(t *testing.T) {
 	}
 	if report.Promoted != 1 || report.Delivered != 1 {
 		t.Fatalf("a confirmed event must be promoted and delivered: %+v", report)
+	}
+	// The delivered record carries the promoted finality, not the one
+	// the scan saw (spec §11.4).
+	var id event.EventID
+	for _, ev := range s.src.blocks[10] {
+		id = ev.ID
+	}
+	s.mu.Lock()
+	got := s.finality[string(id)]
+	s.mu.Unlock()
+	if got != event.FinalityConfirmed {
+		t.Fatalf("handler saw finality %q, want confirmed", got)
 	}
 }
 
