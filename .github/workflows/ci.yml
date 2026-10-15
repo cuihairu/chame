@@ -45,6 +45,10 @@ jobs:
         run: make vet
       - name: Build
         run: make build
+      - name: Examples
+        # The minimal example runs end-to-end on SIGTERM with no chain
+        # service anywhere (spec §16.3, §22).
+        run: make examples
       - name: Test
         run: make test-race
 
