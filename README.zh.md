@@ -3,7 +3,7 @@
 
 > [English](README.md) | **中文**
 
-<p align="center"><img src="assets/logo.svg" alt="Chame logo" width="96" height="96"></p>
+<p align="center"><img src="assets/logo.jpg" alt="Chame logo" width="96" height="96"></p>
 
 <p align="center">
   <a href="https://github.com/cuihairu/chame/actions"><img src="https://github.com/cuihairu/chame/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
