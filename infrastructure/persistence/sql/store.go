@@ -236,6 +236,44 @@ func (s *Store) UpdateStatus(ctx context.Context, id transaction.TransactionID, 
 	return nil
 }
 
+// Attach implements transaction.Repository: the matrix is checked on
+// the read view, then status, chain reference, and chain data move in
+// one compare-and-swap (§10.2) — a submitted record can never lack the
+// reference that names it.
+func (s *Store) Attach(ctx context.Context, id transaction.TransactionID, expected, next transaction.TransactionStatus, chainHash string, chainData any, at time.Time) error {
+	current, err := s.Get(ctx, id)
+	if err != nil {
+		return err
+	}
+	if current.Status != expected {
+		return fmt.Errorf("%w: transaction %s is %s, expected %s",
+			transaction.ErrStatusConflict, id, current.Status, expected)
+	}
+	if !transaction.CanTransition(expected, next) {
+		return fmt.Errorf("%w: %s -> %s on transaction %s",
+			transaction.ErrIllegalTransition, expected, next, id)
+	}
+	data, err := encodeChainData(chainData)
+	if err != nil {
+		return err
+	}
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE chame_transactions
+SET status = $1, chain_hash = $2, chain_data = $3, updated_at = $4
+WHERE id = $5 AND status = $6`,
+		next, chainHash, data, at, id, expected)
+	if err != nil {
+		return cherrs.New(cherrs.PersistenceFailure, "transaction.sql.attach", "%v", err)
+	}
+	if n, err := res.RowsAffected(); err != nil || n == 0 {
+		if err != nil {
+			return cherrs.New(cherrs.PersistenceFailure, "transaction.sql.attach", "%v", err)
+		}
+		return fmt.Errorf("%w: transaction %s is no longer %s", transaction.ErrStatusConflict, id, expected)
+	}
+	return nil
+}
+
 // FindStale implements transaction.Repository: matching records,
 // oldest-first, deterministically tie-broken by id.
 func (s *Store) FindStale(ctx context.Context, q transaction.StaleQuery) ([]transaction.Transaction, error) {

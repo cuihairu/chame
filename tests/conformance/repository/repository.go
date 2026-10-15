@@ -31,6 +31,7 @@ func Run(t *testing.T, newStore newStoreFunc) {
 	t.Helper()
 	t.Run("IdempotencyUniqueness", func(t *testing.T) { runIdempotency(t, newStore) })
 	t.Run("StatusMachine", func(t *testing.T) { runStatusMachine(t, newStore) })
+	t.Run("AttachChainFields", func(t *testing.T) { runAttach(t, newStore) })
 	t.Run("StaleScan", func(t *testing.T) { runStaleScan(t, newStore) })
 	t.Run("Lease", func(t *testing.T) { runLease(t, newStore) })
 	t.Run("RecordValidation", func(t *testing.T) { runRecordValidation(t, newStore) })
@@ -649,6 +650,148 @@ func runChainData(t *testing.T, newStore newStoreFunc) {
 			if raw, ok := got.ChainData.(json.RawMessage); !ok || len(raw) != 0 {
 				t.Fatalf("absent chain data must stay absent, got %#v", got.ChainData)
 			}
+		}
+	})
+}
+
+// runAttach pins the atomic chain-field write (§10.2): status, chain
+// reference, and chain data move in one conditional step, so a record's
+// reference can never disagree with its status — a submitted record
+// without its hash is the crash the method exists to prevent.
+func runAttach(t *testing.T, newStore newStoreFunc) {
+	ctx := context.Background()
+	at := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+
+	t.Run("moves status and chain fields together", func(t *testing.T) {
+		repo := newStore(t)
+		mustCreate(t, repo, record("tx-1", "", "", at))
+		next := at.Add(time.Minute)
+		payload := map[string]any{"kind": "pin", "window": float64(150)}
+		if err := repo.Attach(ctx, "tx-1", transaction.TxCreated, transaction.TxPrepared, "", payload, next); err != nil {
+			t.Fatalf("attach: %v", err)
+		}
+		got, err := repo.Get(ctx, "tx-1")
+		if err != nil {
+			t.Fatalf("get: %v", err)
+		}
+		if got.Status != transaction.TxPrepared || got.ChainHash != "" || !got.UpdatedAt.Equal(next) {
+			t.Fatalf("want prepared without a reference at %v, got %+v", next, got)
+		}
+		want, err := json.Marshal(payload)
+		if err != nil {
+			t.Fatalf("marshal want: %v", err)
+		}
+		have, err := json.Marshal(got.ChainData)
+		if err != nil {
+			t.Fatalf("marshal have: %v", err)
+		}
+		if string(want) != string(have) {
+			t.Fatalf("chain data did not attach: want %s, have %s", want, have)
+		}
+	})
+
+	t.Run("carries the reference at submission", func(t *testing.T) {
+		repo := newStore(t)
+		mustCreate(t, repo, record("tx-1", "", "", at))
+		if err := repo.Attach(ctx, "tx-1", transaction.TxCreated, transaction.TxPrepared, "", nil, at); err != nil {
+			t.Fatalf("attach prepare: %v", err)
+		}
+		if err := repo.Attach(ctx, "tx-1", transaction.TxPrepared, transaction.TxSigned, "", nil, at); err != nil {
+			t.Fatalf("attach sign: %v", err)
+		}
+		// The step the method exists for: broadcast and reference land as
+		// one write, so a crash between them leaves no half-truth.
+		if err := repo.Attach(ctx, "tx-1", transaction.TxSigned, transaction.TxSubmitted,
+			"0xhash", map[string]any{"kind": "sent"}, at); err != nil {
+			t.Fatalf("attach submit: %v", err)
+		}
+		got, err := repo.Get(ctx, "tx-1")
+		if err != nil {
+			t.Fatalf("get: %v", err)
+		}
+		if got.Status != transaction.TxSubmitted || got.ChainHash != "0xhash" {
+			t.Fatalf("want submitted with its reference, got %+v", got)
+		}
+	})
+
+	t.Run("stale expectation conflicts", func(t *testing.T) {
+		repo := newStore(t)
+		mustCreate(t, repo, record("tx-1", "", "", at))
+		if err := repo.Attach(ctx, "tx-1", transaction.TxCreated, transaction.TxPrepared, "", nil, at); err != nil {
+			t.Fatalf("attach: %v", err)
+		}
+		// A worker that still expects created lost the race, and its
+		// reference must not land on a record it did not move.
+		err := repo.Attach(ctx, "tx-1", transaction.TxCreated, transaction.TxPrepared, "0xstale", nil, at)
+		if !errors.Is(err, transaction.ErrStatusConflict) {
+			t.Fatalf("want ErrStatusConflict, got %v", err)
+		}
+		got, err := repo.Get(ctx, "tx-1")
+		if err != nil || got.ChainHash != "" {
+			t.Fatalf("conflicting attach must not write the reference: %+v %v", got, err)
+		}
+	})
+
+	t.Run("illegal transition is rejected", func(t *testing.T) {
+		repo := newStore(t)
+		mustCreate(t, repo, record("tx-1", "", "", at))
+		err := repo.Attach(ctx, "tx-1", transaction.TxCreated, transaction.TxSubmitted, "0xhash", nil, at)
+		if !errors.Is(err, transaction.ErrIllegalTransition) {
+			t.Fatalf("want ErrIllegalTransition, got %v", err)
+		}
+		got, err := repo.Get(ctx, "tx-1")
+		if err != nil || got.Status != transaction.TxCreated || got.ChainHash != "" {
+			t.Fatalf("rejected attach must not move the record: %+v %v", got, err)
+		}
+	})
+
+	t.Run("nil chain data clears the payload", func(t *testing.T) {
+		repo := newStore(t)
+		mustCreate(t, repo, record("tx-1", "", "", at))
+		if err := repo.Attach(ctx, "tx-1", transaction.TxCreated, transaction.TxPrepared,
+			"", map[string]any{"kind": "pin"}, at); err != nil {
+			t.Fatalf("attach with data: %v", err)
+		}
+		if err := repo.Attach(ctx, "tx-1", transaction.TxPrepared, transaction.TxSigned, "", nil, at); err != nil {
+			t.Fatalf("attach without data: %v", err)
+		}
+		got, err := repo.Get(ctx, "tx-1")
+		if err != nil {
+			t.Fatalf("get: %v", err)
+		}
+		if got.ChainData != nil {
+			if raw, ok := got.ChainData.(json.RawMessage); !ok || len(raw) != 0 {
+				t.Fatalf("nil chain data must clear the payload, got %#v", got.ChainData)
+			}
+		}
+	})
+
+	t.Run("same status is an in-place observation", func(t *testing.T) {
+		repo := newStore(t)
+		mustCreate(t, repo, record("tx-1", "", "", at))
+		if err := repo.Attach(ctx, "tx-1", transaction.TxCreated, transaction.TxCreated,
+			"", map[string]any{"kind": "intent"}, at); err != nil {
+			t.Fatalf("attach: %v", err)
+		}
+		got, err := repo.Get(ctx, "tx-1")
+		if err != nil {
+			t.Fatalf("get: %v", err)
+		}
+		if got.Status != transaction.TxCreated {
+			t.Fatalf("status must stay, got %s", got.Status)
+		}
+		want, _ := json.Marshal(map[string]any{"kind": "intent"})
+		have, _ := json.Marshal(got.ChainData)
+		if string(want) != string(have) {
+			t.Fatalf("chain data must land: want %s, have %s", want, have)
+		}
+	})
+
+	t.Run("missing record is not found", func(t *testing.T) {
+		repo := newStore(t)
+		err := repo.Attach(ctx, "nope", transaction.TxCreated, transaction.TxPrepared, "", nil, at)
+		if !errors.Is(err, transaction.ErrRecordNotFound) {
+			t.Fatalf("want ErrRecordNotFound, got %v", err)
 		}
 	})
 }

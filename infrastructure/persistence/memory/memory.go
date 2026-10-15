@@ -122,6 +122,31 @@ func (s *Store) UpdateStatus(_ context.Context, id transaction.TransactionID, ex
 	return nil
 }
 
+// Attach implements transaction.Repository: one status move and one
+// chain-field write, atomically (§10.2).
+func (s *Store) Attach(_ context.Context, id transaction.TransactionID, expected, next transaction.TransactionStatus, chainHash string, chainData any, at time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	tx, ok := s.records[id]
+	if !ok {
+		return fmt.Errorf("%w: %s", transaction.ErrRecordNotFound, id)
+	}
+	if tx.Status != expected {
+		return fmt.Errorf("%w: transaction %s is %s, expected %s",
+			transaction.ErrStatusConflict, id, tx.Status, expected)
+	}
+	if !transaction.CanTransition(expected, next) {
+		return fmt.Errorf("%w: %s -> %s on transaction %s",
+			transaction.ErrIllegalTransition, expected, next, id)
+	}
+	tx.Status = next
+	tx.ChainHash = chainHash
+	tx.ChainData = chainData
+	tx.UpdatedAt = at
+	s.records[id] = tx
+	return nil
+}
+
 // FindStale implements transaction.Repository: matching records,
 // oldest-first, deterministically tie-broken by ID.
 func (s *Store) FindStale(_ context.Context, q transaction.StaleQuery) ([]transaction.Transaction, error) {

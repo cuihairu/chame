@@ -120,6 +120,9 @@ func (l Lease) Validate() error {
 //     stored status against expected and applies the state-machine
 //     matrix, so concurrent workers cannot drive one record into
 //     contradictory states.
+//   - chain fields with their status (§10.2): Attach writes the chain
+//     reference and chain data in the same atomic step as the advance,
+//     so a record's reference and its status can never disagree.
 //   - leases (§10.4): at most one holder claims a record at a time, with
 //     expiry and owner-only release, so multiple workers reconcile
 //     without stepping on each other.
@@ -145,6 +148,19 @@ type Repository interface {
 	// ErrIllegalTransition on a matrix violation; success stamps UpdatedAt
 	// to at.
 	UpdateStatus(ctx context.Context, id TransactionID, expected, next TransactionStatus, at time.Time) error
+	// Attach moves a record from expected to next and writes its chain
+	// fields in the same atomic step (§10.2). The chain reference and the
+	// adapter-owned chain data belong to whoever advances the record: the
+	// flow that submits writes the reference in the same write as the
+	// status, so a crash can never leave a submitted record without its
+	// chain hash, and a prepared record keeps the data its recovery needs.
+	// chainHash is the reference the record holds after the move — empty
+	// while nothing has been broadcast, the chain's own identifier once it
+	// has. chainData replaces the stored payload wholesale; a nil argument
+	// clears it. The same conditional rules as UpdateStatus apply:
+	// ErrStatusConflict on a stale expectation, ErrIllegalTransition on a
+	// matrix violation, UpdatedAt stamped to at on success.
+	Attach(ctx context.Context, id TransactionID, expected, next TransactionStatus, chainHash string, chainData any, at time.Time) error
 	// FindStale returns matching records oldest-first (§10.4 scan).
 	FindStale(ctx context.Context, q StaleQuery) ([]Transaction, error)
 	// Claim attempts to lease the record to lease.Holder. It reports
