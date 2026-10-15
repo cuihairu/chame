@@ -24,6 +24,7 @@ type rpcClient interface {
 	BlockNumber(ctx context.Context) (uint64, error)
 	HeaderByNumber(ctx context.Context, number *big.Int) (*types.Header, error)
 	BalanceAt(ctx context.Context, account common.Address, blockNumber *big.Int) (*big.Int, error)
+	PendingNonceAt(ctx context.Context, account common.Address) (uint64, error)
 	CodeAt(ctx context.Context, account common.Address, blockNumber *big.Int) ([]byte, error)
 	CallContract(ctx context.Context, msg ethereum.CallMsg, blockNumber *big.Int) ([]byte, error)
 	FilterLogs(ctx context.Context, q ethereum.FilterQuery) ([]types.Log, error)
@@ -42,6 +43,9 @@ func (e ethRPC) HeaderByNumber(ctx context.Context, number *big.Int) (*types.Hea
 }
 func (e ethRPC) BalanceAt(ctx context.Context, account common.Address, blockNumber *big.Int) (*big.Int, error) {
 	return e.c.BalanceAt(ctx, account, blockNumber)
+}
+func (e ethRPC) PendingNonceAt(ctx context.Context, account common.Address) (uint64, error) {
+	return e.c.PendingNonceAt(ctx, account)
 }
 func (e ethRPC) CodeAt(ctx context.Context, account common.Address, blockNumber *big.Int) ([]byte, error) {
 	return e.c.CodeAt(ctx, account, blockNumber)

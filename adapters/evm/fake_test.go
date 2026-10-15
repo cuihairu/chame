@@ -43,6 +43,12 @@ type fakeClient struct {
 	// accounts side by side.
 	balanceByAddress map[string]*big.Int
 
+	// pendingNonceByAddress overrides the next unconsumed nonce reported
+	// for one address, keyed by lowercase hex, so tests can simulate
+	// accounts with on-chain history and advance them as transactions
+	// land.
+	pendingNonceByAddress map[string]uint64
+
 	// selectorReply overrides the reply for one four-byte selector, so
 	// tests can answer several functions of one contract at once.
 	selectorReply map[string][]byte
@@ -52,6 +58,7 @@ type fakeClient struct {
 	queries  []ethereum.FilterQuery
 	balances []common.Address
 	codes    []common.Address
+	nonces   []common.Address
 	closed   bool
 	attempts map[string]int
 }
@@ -115,6 +122,16 @@ func (f *fakeClient) withCall(selector string, reply []byte) *fakeClient {
 	return f
 }
 
+// withPendingNonce pins the next unconsumed nonce reported for addr, so
+// tests can move the account forward as transactions land.
+func (f *fakeClient) withPendingNonce(addr common.Address, n uint64) *fakeClient {
+	if f.pendingNonceByAddress == nil {
+		f.pendingNonceByAddress = map[string]uint64{}
+	}
+	f.pendingNonceByAddress[addr.Hex()] = n
+	return f
+}
+
 // withBlock pins the header reported for height and returns its derived
 // hash, so tests can assert exact block positions and build log records
 // that agree with the chain.
@@ -143,6 +160,12 @@ func (f *fakeClient) capturedCodes() []common.Address {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return append([]common.Address(nil), f.codes...)
+}
+
+func (f *fakeClient) capturedNonces() []common.Address {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]common.Address(nil), f.nonces...)
 }
 
 func (f *fakeClient) maybeFail(method string) error {
@@ -200,6 +223,17 @@ func (f *fakeClient) BalanceAt(ctx context.Context, account common.Address, bloc
 		return new(big.Int), nil
 	}
 	return new(big.Int).Set(bal), nil
+}
+
+func (f *fakeClient) PendingNonceAt(ctx context.Context, account common.Address) (uint64, error) {
+	if err := f.maybeFail("pending_nonce_at"); err != nil {
+		return 0, err
+	}
+	f.mu.Lock()
+	f.nonces = append(f.nonces, account)
+	n := f.pendingNonceByAddress[account.Hex()]
+	f.mu.Unlock()
+	return n, nil
 }
 
 func (f *fakeClient) CodeAt(ctx context.Context, account common.Address, blockNumber *big.Int) ([]byte, error) {

@@ -248,6 +248,31 @@ func (n *Network) BalanceAt(ctx context.Context, account identifiers.Address) (*
 	return bal, nil
 }
 
+// PendingNonceAt returns the account's next unconsumed nonce as the node
+// sees it: transactions mined or pooled both count (spec §7.5's chain
+// observation the coordinator must distinguish from local allocations).
+func (n *Network) PendingNonceAt(ctx context.Context, account identifiers.Address) (uint64, error) {
+	addr, err := toCommon(n.opBase+".pending_nonce_at", account)
+	if err != nil {
+		n.stats.countError()
+		return 0, err
+	}
+	ctx, cancel := n.withTimeout(ctx)
+	defer cancel()
+	n.stats.countRequest()
+	var nonce uint64
+	err = n.pool.call(ctx, n.id.String(), n.opBase+".pending_nonce_at", func(c rpcClient) error {
+		var e error
+		nonce, e = c.PendingNonceAt(ctx, addr)
+		return e
+	})
+	if err != nil {
+		n.stats.countError()
+		return 0, err
+	}
+	return nonce, nil
+}
+
 // TokenBalance returns the ERC-20 balance of holder on the token
 // contract, in the token's base units.
 func (n *Network) TokenBalance(ctx context.Context, token, holder identifiers.Address) (*big.Int, error) {
