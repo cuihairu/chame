@@ -4,10 +4,6 @@
 
 <h1 align="center">Chame</h1>
 
-> [English](README.md) | **中文**
-
-<p align="center"><img src="assets/logo.jpg" alt="Chame logo" width="96" height="96"></p>
-
 <p align="center">
   <a href="https://github.com/cuihairu/chame/actions"><img src="https://github.com/cuihairu/chame/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="License"></a>
