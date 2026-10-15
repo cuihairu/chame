@@ -219,6 +219,12 @@ func (f *Flow) authorize(ctx context.Context, tx txmodel.Transaction, p txmodel.
 // unknown instead: the bytes may already be on chain, so the claim is
 // spent and the recovery worker observes the record (§14.3, §10.4).
 func (f *Flow) dispatch(ctx context.Context, tx txmodel.Transaction, a txmodel.Authorized) (txmodel.Transaction, error) {
+	// A resumed record arrives with a zero carry-over: the chain data it
+	// should keep is the one the record already holds, so a nil from the
+	// dispatch step cannot clear the payload an earlier run stored.
+	if a.ChainData == nil {
+		a.ChainData = tx.ChainData
+	}
 	ref, err := f.transactor.Dispatch(ctx, tx, a)
 	if err != nil {
 		if verdict(err, cherrs.SemSubmit) {

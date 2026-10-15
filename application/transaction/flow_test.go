@@ -436,3 +436,31 @@ func TestFlowNeedsRepositoryAndTransactor(t *testing.T) {
 		t.Fatal("NewFlow(repo, nil): err = nil, want error")
 	}
 }
+
+// TestFlowKeepsChainDataAcrossAResumedDispatch pins the resume rule: a
+// signed record the flow did not prepare in this run keeps its chain
+// data after submission — a nil from the dispatch step is "no carry
+// over", not "erase the evidence".
+func TestFlowKeepsChainDataAcrossAResumedDispatch(t *testing.T) {
+	tr := &fakeTransactor{ref: "0xref"}
+	f, repo := newFlow(t, tr)
+	tx, err := f.Begin(context.Background(), flowScope(), "key-1", flowSeed("tx-1"))
+	if err != nil {
+		t.Fatalf("begin: %v", err)
+	}
+	if err := repo.Attach(context.Background(), tx.ID, txmodel.TxCreated, txmodel.TxPrepared, "", nil, tx.CreatedAt); err != nil {
+		t.Fatalf("stage prepared: %v", err)
+	}
+	if err := repo.Attach(context.Background(), tx.ID, txmodel.TxPrepared, txmodel.TxSigned,
+		"", map[string]any{"stage": "signed"}, tx.CreatedAt); err != nil {
+		t.Fatalf("stage signed: %v", err)
+	}
+
+	out, err := f.Drive(context.Background(), tx.ID)
+	if err != nil {
+		t.Fatalf("drive: %v", err)
+	}
+	if stage, _ := out.ChainData.(map[string]any); stage["stage"] != "signed" {
+		t.Fatalf("chain data must survive the resumed dispatch, got %v", out.ChainData)
+	}
+}
