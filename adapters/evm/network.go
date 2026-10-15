@@ -32,9 +32,14 @@ type BlockInfo struct {
 // LogRecord is one event log entry.
 type LogRecord struct {
 	BlockNumber uint64
-	TxHash      string
-	LogIndex    uint32
-	Address     identifiers.Address
+	// BlockHash locates the block the log belongs to (spec §11.3: the
+	// event identity needs the block location, not just the height).
+	// A node that omits it reports the zero hash, which the event source
+	// treats as an error rather than inventing an identity.
+	BlockHash string
+	TxHash    string
+	LogIndex  uint32
+	Address   identifiers.Address
 	// Topics are 32-byte hex strings, the ABI event signature first.
 	Topics []string
 	// Data is the non-indexed ABI payload.
@@ -204,6 +209,13 @@ func (n *Network) BlockByNumber(ctx context.Context, number uint64) (BlockInfo, 
 	if err != nil {
 		n.stats.countError()
 		return BlockInfo{}, err
+	}
+	if header == nil {
+		// A height the node does not hold answers with no header: the
+		// position is unverifiable, never a fabricated block.
+		n.stats.countError()
+		return BlockInfo{}, cherrs.New(cherrs.EventDecodeFailure, n.opBase+".header_by_number",
+			"node returned no header for the requested block")
 	}
 	return BlockInfo{
 		Number:     header.Number.Uint64(),
@@ -493,6 +505,7 @@ func toRecords(op string, logs []types.Log) ([]LogRecord, error) {
 		}
 		out = append(out, LogRecord{
 			BlockNumber: l.BlockNumber,
+			BlockHash:   l.BlockHash.Hex(),
 			TxHash:      l.TxHash.Hex(),
 			LogIndex:    uint32(l.Index),
 			Address:     addr,

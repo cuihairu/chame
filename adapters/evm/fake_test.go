@@ -29,6 +29,10 @@ type fakeClient struct {
 	code        []byte
 	logs        []types.Log
 
+	// headersByNumber overrides the header reported for one height, so
+	// tests can serve several distinct blocks side by side.
+	headersByNumber map[uint64]*types.Header
+
 	// codeByAddress overrides the code reported for one address, keyed by
 	// lowercase hex, so tests can simulate contract and key-backed
 	// accounts side by side.
@@ -111,6 +115,18 @@ func (f *fakeClient) withCall(selector string, reply []byte) *fakeClient {
 	return f
 }
 
+// withBlock pins the header reported for height and returns its derived
+// hash, so tests can assert exact block positions and build log records
+// that agree with the chain.
+func (f *fakeClient) withBlock(height uint64, parent common.Hash) string {
+	h := &types.Header{Number: new(big.Int).SetUint64(height), ParentHash: parent}
+	if f.headersByNumber == nil {
+		f.headersByNumber = map[uint64]*types.Header{}
+	}
+	f.headersByNumber[height] = h
+	return h.Hash().Hex()
+}
+
 func (f *fakeClient) capturedQueries() []ethereum.FilterQuery {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -156,6 +172,15 @@ func (f *fakeClient) BlockNumber(ctx context.Context) (uint64, error) {
 func (f *fakeClient) HeaderByNumber(ctx context.Context, number *big.Int) (*types.Header, error) {
 	if err := f.maybeFail("header_by_number"); err != nil {
 		return nil, err
+	}
+	var n uint64
+	if number != nil {
+		n = number.Uint64()
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if h, ok := f.headersByNumber[n]; ok {
+		return h, nil
 	}
 	return f.header, nil
 }
@@ -207,6 +232,9 @@ func (f *fakeClient) CallContract(ctx context.Context, msg ethereum.CallMsg, blo
 	return f.callReply, nil
 }
 
+// FilterLogs returns the pinned logs inside the query's block range,
+// like a node does: the event source's range discipline depends on the
+// node filtering by FromBlock/ToBlock.
 func (f *fakeClient) FilterLogs(ctx context.Context, q ethereum.FilterQuery) ([]types.Log, error) {
 	if err := f.maybeFail("filter_logs"); err != nil {
 		return nil, err
@@ -214,7 +242,17 @@ func (f *fakeClient) FilterLogs(ctx context.Context, q ethereum.FilterQuery) ([]
 	f.mu.Lock()
 	f.queries = append(f.queries, q)
 	f.mu.Unlock()
-	return f.logs, nil
+	out := make([]types.Log, 0, len(f.logs))
+	for _, l := range f.logs {
+		if q.FromBlock != nil && l.BlockNumber < q.FromBlock.Uint64() {
+			continue
+		}
+		if q.ToBlock != nil && l.BlockNumber > q.ToBlock.Uint64() {
+			continue
+		}
+		out = append(out, l)
+	}
+	return out, nil
 }
 
 func (f *fakeClient) Close() {
