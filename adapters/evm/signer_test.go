@@ -129,11 +129,11 @@ func TestLocalDevSignerDescriptor(t *testing.T) {
 	if err := d.Validate(); err != nil {
 		t.Fatalf("descriptor invalid: %v", err)
 	}
-	if len(d.Formats) != 0 {
-		t.Errorf("message-only signer must declare no transaction formats, got %v", d.Formats)
+	if !d.SupportsType(signer.SigEVMMessage) || !d.SupportsType(signer.SigEVMTransaction) {
+		t.Errorf("signature types = %v, want message and transaction signing", d.SignatureTypes)
 	}
-	if len(d.SignatureTypes) != 1 || d.SignatureTypes[0] != signer.SigEVMMessage {
-		t.Errorf("signature types = %v", d.SignatureTypes)
+	if len(d.Formats) != 2 || !declaresFormat(d.Formats, signer.FormatEIP1559) || !declaresFormat(d.Formats, signer.FormatEIP155) {
+		t.Errorf("formats = %v, want EIP-1559 and EIP-155", d.Formats)
 	}
 	if len(d.AddressSources) != 1 || d.AddressSources[0] != signer.AddressSourceHeldKey {
 		t.Errorf("address sources = %v", d.AddressSources)
@@ -256,4 +256,14 @@ func TestLocalDevSignerBoundaries(t *testing.T) {
 	if len(entries) != 1 || entries[0].Digest != signer.PayloadDigest([]byte("p")) {
 		t.Fatalf("audit entry wrong: %+v", entries)
 	}
+}
+
+// declaresFormat reports whether one format is declared on the list.
+func declaresFormat(formats []signer.Format, want signer.Format) bool {
+	for _, f := range formats {
+		if f == want {
+			return true
+		}
+	}
+	return false
 }

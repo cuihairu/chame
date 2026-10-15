@@ -4,10 +4,13 @@ import (
 	"context"
 	"crypto/ecdsa"
 	"fmt"
+	"math/big"
+	"strconv"
 
 	cherrs "github.com/cuihairu/chame/core/errors"
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 
 	"github.com/cuihairu/chame/capability/signer"
@@ -17,13 +20,12 @@ import (
 
 // LocalDevSigner is the EVM development signer (spec §12.2): it holds
 // one secp256k1 key in process memory and signs EIP-191 personal
-// messages for an explicit allow-list of (network, account) pairs.
+// messages and unsigned transactions for an explicit allow-list of
+// (network, account) pairs.
 //
 // It is an Unsafe signer (spec §12.4): plaintext keys are development
-// and test only, production environments are refused at construction,
-// and it signs no transaction formats — built transactions land with the
-// transaction capability. Games needing off-chain login verification use
-// VerifyPersonalMessage on the results.
+// and test only, and production environments are refused at
+// construction.
 type LocalDevSigner struct {
 	key      *ecdsa.PrivateKey
 	account  identifiers.Address
@@ -69,7 +71,8 @@ func NewLocalDevSigner(env string, key *ecdsa.PrivateKey, accounts ...signer.Acc
 		accounts: list,
 		desc: signer.Descriptor{
 			Name:           "evm-dev",
-			SignatureTypes: []signer.SignatureType{signer.SigEVMMessage},
+			SignatureTypes: []signer.SignatureType{signer.SigEVMMessage, signer.SigEVMTransaction},
+			Formats:        []signer.Format{signer.FormatEIP1559, signer.FormatEIP155},
 			AddressSources: []signer.AddressSource{signer.AddressSourceHeldKey},
 			Unsafe:         true,
 		},
@@ -110,17 +113,20 @@ func GenerateDevKey() (*ecdsa.PrivateKey, error) {
 	return key, nil
 }
 
-// Descriptor declares EIP-191 message signing over a held key, unsafe.
+// Descriptor declares EIP-191 message and unsigned-transaction signing
+// over a held key, unsafe.
 func (s *LocalDevSigner) Descriptor() signer.Descriptor { return s.desc }
 
 // Accounts returns a copy of the allow-list.
 func (s *LocalDevSigner) Accounts() []signer.AccountRef { return s.accounts.Accounts() }
 
-// Sign signs one EIP-191 personal message for an allowed (network,
-// account) pair: keccak256 over the length-prefixed payload, 65-byte
-// R||S||V with the personal-sign recovery parity (27/28) in the last
-// byte. The payload is not decoded and is never an authorization
-// (spec §12.3).
+// Sign signs one payload for an allowed (network, account) pair. EIP-191
+// personal messages are keccak256 over the length-prefixed payload and
+// carry 65-byte R||S||V with the personal-sign parity (27/28) in the
+// last byte; transactions are signed over the exact unsigned bytes
+// the request carries and the signed encoding comes back. Neither
+// payload is decoded, and neither is ever an authorization (spec
+// §12.3).
 func (s *LocalDevSigner) Sign(ctx context.Context, req signer.Request) (signer.Signed, error) {
 	if err := ctx.Err(); err != nil {
 		return signer.Signed{}, err
@@ -134,12 +140,87 @@ func (s *LocalDevSigner) Sign(ctx context.Context, req signer.Request) (signer.S
 	if err := s.accounts.Authorize(req); err != nil {
 		return signer.Signed{}, err
 	}
-	sig, err := crypto.Sign(accounts.TextHash(req.Payload), s.key)
-	if err != nil {
-		return signer.Signed{}, cherrs.New(cherrs.InternalError, "evm.signer.sign", "sign: %v", err)
+	switch req.Type {
+	case signer.SigEVMMessage:
+		sig, err := crypto.Sign(accounts.TextHash(req.Payload), s.key)
+		if err != nil {
+			return signer.Signed{}, cherrs.New(cherrs.InternalError, "evm.signer.sign", "sign: %v", err)
+		}
+		sig[64] += 27 // personal-sign parity
+		return signer.Signed{Signature: sig, Signer: s.desc.Name}, nil
+	default:
+		return s.signTransaction(req)
 	}
-	sig[64] += 27 // personal-sign parity
-	return signer.Signed{Signature: sig, Signer: s.desc.Name}, nil
+}
+
+// signTransaction signs one unsigned transaction (spec §12.1). The
+// payload is the transaction's canonical unsigned encoding — RLP for a
+// legacy tx, the typed envelope for EIP-1559 — exactly as the builder
+// produced it. The signature is computed per the tx type, and the
+// signed encoding is returned for broadcast.
+//
+// The transaction is verified against the request before signing: the
+// chain id must match the network the request names, so a transaction
+// built for another chain is refused rather than delivered somewhere
+// unexpected. A transaction that already carries a signature is
+// refused too — a signature is produced once over the unsigned bytes,
+// never renewed. The sender is the key itself: one held key signs only
+// for its own address (spec §7.6), even when the allow-list names other
+// accounts for message signing.
+func (s *LocalDevSigner) signTransaction(req signer.Request) (signer.Signed, error) {
+	const op = "evm.signer.tx"
+	if !req.Account.Equal(s.account) {
+		return signer.Signed{}, fmt.Errorf("%w: the key signs only for %s",
+			signer.ErrUnauthorized, s.account.Value)
+	}
+	chainID, err := strconv.ParseUint(req.Network.ChainID, 10, 64)
+	if err != nil || chainID == 0 {
+		return signer.Signed{}, fmt.Errorf("%w: request network %q has no valid chain id",
+			signer.ErrInvalidRequest, req.Network.Name)
+	}
+
+	var unsigned types.Transaction
+	if err := unsigned.UnmarshalBinary(req.Payload); err != nil {
+		return signer.Signed{}, fmt.Errorf("%w: payload is not an EVM transaction: %v",
+			signer.ErrInvalidRequest, err)
+	}
+	switch unsigned.Type() {
+	case types.LegacyTxType, types.DynamicFeeTxType:
+		// Declared formats only (spec §12.1).
+	default:
+		return signer.Signed{}, fmt.Errorf("%w: transaction type %d",
+			signer.ErrUnsupportedType, unsigned.Type())
+	}
+	// A typed encoding carries its chain id, so it must match the
+	// network the request names. A legacy encoding has no chain id
+	// field at all — the id is bound at signing time, from the
+	// network the request names (spec §7.6).
+	if unsigned.Type() != types.LegacyTxType {
+		declared := unsigned.ChainId()
+		if declared == nil || declared.Uint64() != chainID {
+			how := "<none>"
+			if declared != nil {
+				how = declared.String()
+			}
+			return signer.Signed{}, fmt.Errorf("%w: transaction chain id %s does not match the request network chain id %d",
+				signer.ErrInvalidRequest, how, chainID)
+		}
+	}
+	_, r, sv := unsigned.RawSignatureValues()
+	if r != nil && r.Sign() != 0 || sv != nil && sv.Sign() != 0 {
+		return signer.Signed{}, fmt.Errorf("%w: payload already carries a signature",
+			signer.ErrInvalidRequest)
+	}
+
+	signed, err := types.SignTx(&unsigned, types.LatestSignerForChainID(new(big.Int).SetUint64(chainID)), s.key)
+	if err != nil {
+		return signer.Signed{}, cherrs.New(cherrs.InternalError, op, "sign: %v", err)
+	}
+	raw, err := signed.MarshalBinary()
+	if err != nil {
+		return signer.Signed{}, cherrs.New(cherrs.InternalError, op, "encode signed tx: %v", err)
+	}
+	return signer.Signed{Signature: raw, Signer: s.desc.Name}, nil
 }
 
 // VerifyPersonalMessage recovers the signer of an EIP-191 personal
