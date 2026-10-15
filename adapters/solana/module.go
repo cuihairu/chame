@@ -281,14 +281,15 @@ func (n *Network) attach(pool *endpointPool) {
 	n.pool = pool
 }
 
-// close shuts the network's endpoints down and disconnects the pool.
-// Safe before attach.
+// close shuts the network's endpoints down. The network keeps the closed
+// pool, so requests after close answer with a classified error. Safe
+// before attach.
 func (n *Network) close() {
 	if n.pool == nil {
 		return
 	}
 	n.pool.close()
-	n.pool = nil
+	n.pool = closedPool
 }
 
 // CheckHealth implements health.Checker. Before Start the network is

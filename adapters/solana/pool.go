@@ -16,6 +16,9 @@ type endpointPool struct {
 	mu      sync.Mutex
 	current int
 	clients []rpcClient
+	// closed marks the pool of a network that has been shut down: its
+	// requests are rejected instead of dialing closed endpoints.
+	closed bool
 	// stats counts failovers; it belongs to the owning Network.
 	stats *counters
 }
@@ -24,11 +27,21 @@ func newEndpointPool(clients []rpcClient, stats *counters) *endpointPool {
 	return &endpointPool{clients: clients, stats: stats}
 }
 
+// closedPool is what a network keeps after close: every request is
+// answered with a classified unavailable error instead of dereferencing
+// a nil pool. Stopping an adapter must reject new requests, not panic
+// (spec §16.2).
+var closedPool = &endpointPool{closed: true}
+
 // call runs fn against the endpoints starting from the current one. On a
 // transient, failover-eligible error it advances and retries, at most once
 // per endpoint. Deterministic errors return immediately. On success the
 // working endpoint becomes current. fn must be a read-only operation.
 func (p *endpointPool) call(ctx context.Context, network, op string, fn func(rpcClient) error) error {
+	if p.closed {
+		return of(cherrs.NetworkUnavailable, op, network,
+			fmt.Errorf("network %s: adapter is closed", network))
+	}
 	p.mu.Lock()
 	start := p.current
 	p.mu.Unlock()
