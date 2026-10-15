@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/gagliardetto/solana-go"
 	"github.com/gagliardetto/solana-go/rpc"
@@ -81,6 +82,14 @@ type fakeClient struct {
 	// historySearchCalls counts ledger-wide signature status queries.
 	historySearchCalls int
 
+	// sentTx is the last transaction the node was handed, and
+	// sentSignature the answer it gave.
+	sentTx        []byte
+	sentSignature solana.Signature
+
+	// slowByMethod sleeps before answering, for deadline tests.
+	slowByMethod map[string]time.Duration
+
 	// Captures.
 	commitments []Commitment
 	accounts    []solana.PublicKey
@@ -137,12 +146,43 @@ func (f *fakeClient) withMissing(addr solana.PublicKey) *fakeClient {
 
 func (f *fakeClient) maybeFail(method string) error {
 	f.mu.Lock()
-	defer f.mu.Unlock()
 	f.attempts[method]++
-	if err, ok := f.errByMethod[method]; ok {
+	slow := f.slowByMethod[method]
+	err, fail := f.errByMethod[method]
+	f.mu.Unlock()
+	if slow > 0 {
+		time.Sleep(slow)
+	}
+	if fail {
 		return err
 	}
 	return nil
+}
+
+// withSlow makes every call of method wait before answering.
+func (f *fakeClient) withSlow(method string, d time.Duration) *fakeClient {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.slowByMethod == nil {
+		f.slowByMethod = map[string]time.Duration{}
+	}
+	f.slowByMethod[method] = d
+	return f
+}
+
+// withSentSignature pins the answer the node gives to a submission.
+func (f *fakeClient) withSentSignature(sig solana.Signature) *fakeClient {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.sentSignature = sig
+	return f
+}
+
+// capturedSentTransaction reports the last submitted transaction bytes.
+func (f *fakeClient) capturedSentTransaction() []byte {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]byte(nil), f.sentTx...)
 }
 
 func (f *fakeClient) GenesisHash(ctx context.Context) (solana.Hash, error) {
@@ -284,9 +324,13 @@ func (f *fakeClient) SignatureStatus(ctx context.Context, sig solana.Signature, 
 }
 
 // LatestBlockhash answers the pinned blockhash at the caller's
-// commitment.
+// commitment. Unlike the other fixtures it honours a context that
+// expires while it waits, because a build's deadline is judged here.
 func (f *fakeClient) LatestBlockhash(ctx context.Context, commitment rpcCommitmentType) (*latestBlockhashResult, error) {
 	if err := f.maybeFail("latest_blockhash"); err != nil {
+		return nil, err
+	}
+	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 	f.mu.Lock()
@@ -329,6 +373,18 @@ func (f *fakeClient) withBlockHeight(height uint64) *fakeClient {
 	defer f.mu.Unlock()
 	f.blockHeight = height
 	return f
+}
+
+// SendTransaction records the submitted bytes and answers the pinned
+// signature.
+func (f *fakeClient) SendTransaction(ctx context.Context, tx []byte) (solana.Signature, error) {
+	if err := f.maybeFail("send_transaction"); err != nil {
+		return solana.Signature{}, err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.sentTx = append([]byte(nil), tx...)
+	return f.sentSignature, nil
 }
 
 func (f *fakeClient) Close() error {

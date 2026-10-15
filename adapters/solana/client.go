@@ -2,6 +2,7 @@ package solana
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"net"
 	"os"
@@ -31,6 +32,7 @@ type rpcClient interface {
 	Block(ctx context.Context, slot uint64, opts *rpc.GetBlockOpts) (*rpc.GetBlockResult, error)
 	Signatures(ctx context.Context, account solana.PublicKey, opts *rpc.GetSignaturesForAddressOpts) ([]*rpc.TransactionSignature, error)
 	SignatureStatus(ctx context.Context, sig solana.Signature, searchHistory bool) ([]*rpc.SignatureStatusesResult, error)
+	SendTransaction(ctx context.Context, tx []byte) (solana.Signature, error)
 	Close() error
 }
 
@@ -96,6 +98,14 @@ func (s solRPC) SignatureStatus(ctx context.Context, sig solana.Signature, searc
 		return nil, nil
 	}
 	return out.Value, nil
+}
+
+// SendTransaction submits an already signed and serialised transaction.
+// The node simulates it first (skipPreflight off), so a transaction the
+// cluster would reject — a spent or expired blockhash, an unauthorised
+// signer — is refused here instead of vanishing into the ledger.
+func (s solRPC) SendTransaction(ctx context.Context, tx []byte) (solana.Signature, error) {
+	return s.c.SendEncodedTransaction(ctx, base64.StdEncoding.EncodeToString(tx))
 }
 
 func (s solRPC) Close() error { return s.c.Close() }
