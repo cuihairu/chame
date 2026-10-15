@@ -11,8 +11,17 @@ import (
 	"github.com/cuihairu/chame/capability/account"
 	"github.com/cuihairu/chame/capability/asset"
 	"github.com/cuihairu/chame/capability/network"
+	"github.com/cuihairu/chame/capability/transaction"
 	"github.com/cuihairu/chame/core/identifiers"
 	conformance "github.com/cuihairu/chame/tests/conformance/adapter"
+)
+
+// The status seam's chain references: one settled execution, one failed
+// execution, one the node holds no record of.
+var (
+	settledSig    = testSignature(0x61)
+	revertedSig   = testSignature(0x62)
+	unobservedSig = testSignature(0x63)
 )
 
 // foreignEVMHolder is a valid EVM address, used as the foreign-family
@@ -30,13 +39,17 @@ func (s *solanaSubject) Net() network.Provider      { return s.net }
 func (s *solanaSubject) Accounts() account.Provider { return s.net.AccountProvider() }
 func (s *solanaSubject) Assets() asset.Provider     { return s.net.AssetProvider() }
 
+func (s *solanaSubject) StatusOf(ctx context.Context, tx transaction.Transaction) (transaction.TransactionStatus, error) {
+	return s.net.StatusOf(ctx, tx)
+}
+
 func (s *solanaSubject) Stop(_ context.Context) error {
 	s.net.close()
 	return nil
 }
 
 func (s *solanaSubject) Break() {
-	s.fake.fail("genesis_hash", netErr{msg: "connection refused"})
+	s.fake.breakEndpoints()
 }
 
 // TestAdapterConformance runs the shared adapter suite (spec §16.2) over
@@ -70,6 +83,14 @@ func solanaFixture() conformance.Fixture {
 			Decimals: 6,
 			Balance:  "42",
 		},
+		Status: &conformance.StatusFixture{
+			// The fixture's node holds the settled signature at finality:
+			// the strongest state the family observes.
+			Settled:       settledSig,
+			SettledStatus: transaction.TxFinalized,
+			Reverted:      revertedSig,
+			Unobserved:    unobservedSig,
+		},
 	}
 }
 
@@ -89,5 +110,20 @@ func newSolanaSubject(t *testing.T) conformance.Subject {
 	}}
 	fake.tokenBalance = &tokenBalanceResult{Value: &rpc.UiTokenAmount{Amount: "42", Decimals: 6}}
 	fake.withMissing(solana.MustPublicKeyFromBase58(sysAccount))
+	// The status seam's answers: the settled signature at finality, the
+	// reverted one with an instruction error. The unobserved signature
+	// gets nothing, like an address the node has never seen.
+	confirmations := uint64(40)
+	fake.withSignatureStatus(settledSig, &rpcSignatureStatusesResult{
+		Slot:               260,
+		Confirmations:      &confirmations,
+		ConfirmationStatus: rpc.ConfirmationStatusFinalized,
+	})
+	fake.withSignatureStatus(revertedSig, &rpcSignatureStatusesResult{
+		Slot:               260,
+		Confirmations:      &confirmations,
+		ConfirmationStatus: rpc.ConfirmationStatusFinalized,
+		Err:                map[string]any{"custom": "InstructionError(0, Custom(1))"},
+	})
 	return &solanaSubject{net: newTestNetwork(fake), fake: fake}
 }

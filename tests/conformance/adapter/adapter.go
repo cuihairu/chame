@@ -2,9 +2,10 @@
 // suite that every chain adapter must pass, so EVM and Solana behave
 // identically on the semantics the public capability contracts define —
 // network identity, family address validation, exact amounts, explicit
-// unsupported capabilities, closed-adapter rejection, and context
-// cancellation. Chain-specific behavior stays in each adapter's own
-// tests; semantics shared by every adapter live here exactly once.
+// unsupported capabilities, closed-adapter rejection, context
+// cancellation, and the transaction-status seam the recovery worker
+// drives. Chain-specific behavior stays in each adapter's own tests;
+// semantics shared by every adapter live here exactly once.
 package adapter
 
 import (
@@ -14,6 +15,7 @@ import (
 	"github.com/cuihairu/chame/capability/account"
 	"github.com/cuihairu/chame/capability/asset"
 	"github.com/cuihairu/chame/capability/network"
+	"github.com/cuihairu/chame/capability/transaction"
 	"github.com/cuihairu/chame/core/identifiers"
 )
 
@@ -27,6 +29,10 @@ type Subject interface {
 	Accounts() account.Provider
 	// Assets is the asset capability view.
 	Assets() asset.Provider
+	// StatusOf reports the strongest state the chain currently shows for
+	// one recorded transaction — the reconciliation seam the recovery
+	// worker drives (spec §7.8).
+	StatusOf(ctx context.Context, tx transaction.Transaction) (transaction.TransactionStatus, error)
 	// Stop shuts the adapter down. Requests after Stop must be rejected.
 	Stop(ctx context.Context) error
 	// Break makes the adapter's endpoints fail, so the suite can reach
@@ -45,6 +51,24 @@ type TokenFixture struct {
 	Decimals uint8
 	// Balance is the exact balance in the token's smallest unit.
 	Balance string
+}
+
+// StatusFixture names the chain references the fixture's endpoint serves
+// for the reconciliation seam (spec §7.8): the statuses each must map to
+// are pinned per family, because the families observe depth differently.
+type StatusFixture struct {
+	// Settled is a chain reference whose execution the endpoint reports
+	// as successful.
+	Settled string
+	// SettledStatus is the status the adapter must report for the
+	// settled reference: the strongest state the family can observe for
+	// a succeeded execution.
+	SettledStatus transaction.TransactionStatus
+	// Reverted is a chain reference whose execution the endpoint reports
+	// as failed.
+	Reverted string
+	// Unobserved is a chain reference the endpoint holds no record of.
+	Unobserved string
 }
 
 // Fixture is the per-adapter wiring the shared suite needs. Everything
@@ -86,6 +110,9 @@ type Fixture struct {
 	// Token is the optional token fixture; a family without tokens
 	// (none today) leaves it nil.
 	Token *TokenFixture
+	// Status is the optional reconciliation-seam fixture; nil leaves the
+	// seam out of the run.
+	Status *StatusFixture
 }
 
 // Run executes the full adapter suite for one fixture.
@@ -101,6 +128,9 @@ func Run(t *testing.T, f Fixture) {
 		t.Run("TokenSemantics", func(t *testing.T) { runToken(t, f) })
 	}
 	t.Run("UnsupportedAssetKind", func(t *testing.T) { runForeignKind(t, f) })
+	if f.Status != nil {
+		t.Run("StatusSeam", func(t *testing.T) { runStatusSeam(t, f) })
+	}
 	t.Run("HealthyReportsUnreachable", func(t *testing.T) { runUnhealthy(t, f) })
 	t.Run("ClosedAdapterRejectsRequests", func(t *testing.T) { runClosed(t, f) })
 	t.Run("CancelledContextPropagates", func(t *testing.T) { runCancelled(t, f) })

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/cuihairu/chame/capability/account"
+	"github.com/cuihairu/chame/capability/transaction"
 	cherrs "github.com/cuihairu/chame/core/errors"
 	"github.com/cuihairu/chame/core/identifiers"
 )
@@ -308,4 +309,84 @@ func runCancelled(t *testing.T, f Fixture) {
 	if _, err := s.Assets().Balance(ctx, nativeAssetID(s.Net().Network()), holder); !errors.Is(err, context.Canceled) {
 		t.Errorf("asset Balance with cancelled context = %v, want context.Canceled", err)
 	}
+}
+
+// runStatusSeam pins the reconciliation contract every adapter shares
+// (spec §7.8): a record without a chain reference reports its own status
+// without going to the chain, an execution the chain reports as failed is
+// terminal whatever depth it reached, a succeeded execution maps to the
+// family's settled status, a reference the chain holds nothing for stays
+// unknown rather than guessed at, and a failed query is reported as a
+// failure, never as a status. The family-specific ladder — pending from a
+// live window, confirmation depths — stays in each adapter's own tests.
+func runStatusSeam(t *testing.T, f Fixture) {
+	t.Helper()
+	st := *f.Status
+	recordWith := func(id, chainHash string) transaction.Transaction {
+		return transaction.Transaction{
+			ID:        transaction.TransactionID(id),
+			Status:    transaction.TxSubmitted,
+			ChainHash: chainHash,
+		}
+	}
+
+	t.Run("OwnStatusWithoutAReference", func(t *testing.T) {
+		s := f.New(t)
+		t.Cleanup(func() { _ = s.Stop(context.Background()) })
+		// The chain is unreachable: the answer must still come back,
+		// because a record with no reference has nothing to ask about.
+		s.Break()
+		status, err := s.StatusOf(context.Background(), recordWith("conf-nohash", ""))
+		if err != nil {
+			t.Fatalf("StatusOf without a reference over a broken chain: %v", err)
+		}
+		if status != transaction.TxSubmitted {
+			t.Errorf("status = %s, want the record's own submitted", status)
+		}
+	})
+
+	t.Run("SettledExecution", func(t *testing.T) {
+		s := f.New(t)
+		t.Cleanup(func() { _ = s.Stop(context.Background()) })
+		status, err := s.StatusOf(context.Background(), recordWith("conf-settled", st.Settled))
+		if err != nil {
+			t.Fatalf("StatusOf of a settled execution: %v", err)
+		}
+		if status != st.SettledStatus {
+			t.Errorf("status = %s, want %s", status, st.SettledStatus)
+		}
+	})
+
+	t.Run("FailedExecution", func(t *testing.T) {
+		s := f.New(t)
+		t.Cleanup(func() { _ = s.Stop(context.Background()) })
+		status, err := s.StatusOf(context.Background(), recordWith("conf-reverted", st.Reverted))
+		if err != nil {
+			t.Fatalf("StatusOf of a failed execution: %v", err)
+		}
+		if status != transaction.TxReverted {
+			t.Errorf("status = %s, want reverted: a failed execution is terminal", status)
+		}
+	})
+
+	t.Run("UnobservedReference", func(t *testing.T) {
+		s := f.New(t)
+		t.Cleanup(func() { _ = s.Stop(context.Background()) })
+		status, err := s.StatusOf(context.Background(), recordWith("conf-unobserved", st.Unobserved))
+		if err != nil {
+			t.Fatalf("StatusOf of an unobserved reference: %v", err)
+		}
+		if status != transaction.TxUnknown {
+			t.Errorf("status = %s, want unknown: an open outcome, not a guess", status)
+		}
+	})
+
+	t.Run("QueryFailurePropagates", func(t *testing.T) {
+		s := f.New(t)
+		t.Cleanup(func() { _ = s.Stop(context.Background()) })
+		s.Break()
+		if _, err := s.StatusOf(context.Background(), recordWith("conf-err", st.Settled)); err == nil {
+			t.Fatal("StatusOf over a broken chain: err = nil, want error — a failed query is not evidence of anything")
+		}
+	})
 }

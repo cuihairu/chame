@@ -56,6 +56,10 @@ type fakeClient struct {
 	// errByMethod makes every call of a method fail with this error.
 	errByMethod map[string]error
 
+	// broken makes every call fail, whatever the method: the
+	// conformance suite's unreachable-network path.
+	broken bool
+
 	// Responses.
 	slot          uint64
 	lamports      uint64
@@ -65,6 +69,11 @@ type fakeClient struct {
 	transaction   *transactionResult
 	signatures    []*rpcTransactionSignature
 	signatureStat []*rpcSignatureStatusesResult
+
+	// sigStatus serves one signature's status answer instead of the
+	// shared signatureStat, so a test can stage several signatures at
+	// once with different outcomes.
+	sigStatus map[string]*rpcSignatureStatusesResult
 
 	// missingAccounts makes the node report null for these addresses,
 	// like an address it has never seen.
@@ -110,6 +119,25 @@ func (f *fakeClient) fail(method string, err error) *fakeClient {
 	return f
 }
 
+// breakEndpoints makes every subsequent call fail, the way an
+// unreachable node does, so the conformance suite can reach any method's
+// failure path at once.
+func (f *fakeClient) breakEndpoints() *fakeClient {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.broken = true
+	return f
+}
+
+// withSignatureStatus pins the status answer one signature gets.
+func (f *fakeClient) withSignatureStatus(sig string, r *rpcSignatureStatusesResult) *fakeClient {
+	if f.sigStatus == nil {
+		f.sigStatus = map[string]*rpcSignatureStatusesResult{}
+	}
+	f.sigStatus[sig] = r
+	return f
+}
+
 func (f *fakeClient) callCount(method string) int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -149,12 +177,16 @@ func (f *fakeClient) maybeFail(method string) error {
 	f.attempts[method]++
 	slow := f.slowByMethod[method]
 	err, fail := f.errByMethod[method]
+	broken := f.broken
 	f.mu.Unlock()
 	if slow > 0 {
 		time.Sleep(slow)
 	}
 	if fail {
 		return err
+	}
+	if broken {
+		return netErr{msg: "connection reset"}
 	}
 	return nil
 }
@@ -319,6 +351,9 @@ func (f *fakeClient) SignatureStatus(ctx context.Context, sig solana.Signature, 
 	defer f.mu.Unlock()
 	if searchHistory {
 		f.historySearchCalls++
+	}
+	if r, ok := f.sigStatus[sig.String()]; ok {
+		return []*rpcSignatureStatusesResult{r}, nil
 	}
 	return f.signatureStat, nil
 }

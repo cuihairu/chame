@@ -6,10 +6,12 @@ import (
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 
 	"github.com/cuihairu/chame/capability/account"
 	"github.com/cuihairu/chame/capability/asset"
 	"github.com/cuihairu/chame/capability/network"
+	"github.com/cuihairu/chame/capability/transaction"
 	"github.com/cuihairu/chame/core/identifiers"
 	conformance "github.com/cuihairu/chame/tests/conformance/adapter"
 )
@@ -18,6 +20,14 @@ import (
 // so the suite can pin the zero-balance contract alongside the funded
 // holder.
 const emptyHolder = "0x00000000000000000000000000000000000000bb"
+
+// The status seam's chain references: one settled execution, one failed
+// execution, one the node holds no record of.
+const (
+	settledTxHash    = "0x2222222222222222222222222222222222222222222222222222222222222222"
+	revertedTxHash   = "0x3333333333333333333333333333333333333333333333333333333333333333"
+	unobservedTxHash = "0x4444444444444444444444444444444444444444444444444444444444444444"
+)
 
 // solVoteAccount is a valid Solana address, used as the foreign-family
 // address the EVM adapter must reject.
@@ -33,13 +43,17 @@ func (s *evmSubject) Net() network.Provider      { return s.net }
 func (s *evmSubject) Accounts() account.Provider { return s.net.AccountProvider() }
 func (s *evmSubject) Assets() asset.Provider     { return s.net.AssetProvider() }
 
+func (s *evmSubject) StatusOf(ctx context.Context, tx transaction.Transaction) (transaction.TransactionStatus, error) {
+	return s.net.StatusOf(ctx, tx)
+}
+
 func (s *evmSubject) Stop(_ context.Context) error {
 	s.net.close()
 	return nil
 }
 
 func (s *evmSubject) Break() {
-	s.fake.fail("chain_id", netErr{msg: "connection refused"})
+	s.fake.breakEndpoints()
 }
 
 // TestAdapterConformance runs the shared adapter suite (spec §16.2) over
@@ -73,6 +87,14 @@ func evmFixture() conformance.Fixture {
 			Decimals: 6,
 			Balance:  "42",
 		},
+		Status: &conformance.StatusFixture{
+			// A receipt the node holds is as far as the family observes:
+			// inclusion, not confirmation.
+			Settled:       settledTxHash,
+			SettledStatus: transaction.TxIncluded,
+			Reverted:      revertedTxHash,
+			Unobserved:    unobservedTxHash,
+		},
 	}
 }
 
@@ -83,5 +105,13 @@ func newEVMSubject(t *testing.T) conformance.Subject {
 	fake.withBalance(common.HexToAddress(emptyHolder), big.NewInt(0))
 	fake.withCall(decimalsSel, word32(6))
 	fake.callReply = word32(42)
+	fake.withReceipt(settledTxHash, &types.Receipt{
+		Status:      types.ReceiptStatusSuccessful,
+		BlockNumber: big.NewInt(42),
+	})
+	fake.withReceipt(revertedTxHash, &types.Receipt{
+		Status:      types.ReceiptStatusFailed,
+		BlockNumber: big.NewInt(42),
+	})
 	return &evmSubject{net: testNetwork(t, fake), fake: fake}
 }

@@ -24,6 +24,10 @@ type fakeClient struct {
 	// errByMethod makes every call of a method fail with this error.
 	errByMethod map[string]error
 
+	// broken makes every call fail, whatever the method: the
+	// conformance suite's unreachable-network path.
+	broken bool
+
 	// Responses.
 	header      *types.Header
 	blockNumber uint64
@@ -98,6 +102,16 @@ func newFakeClient(chainID uint64) *fakeClient {
 
 func (f *fakeClient) fail(method string, err error) *fakeClient {
 	f.errByMethod[method] = err
+	return f
+}
+
+// breakEndpoints makes every subsequent call fail, the way an
+// unreachable node does, so the conformance suite can reach any method's
+// failure path at once.
+func (f *fakeClient) breakEndpoints() *fakeClient {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.broken = true
 	return f
 }
 
@@ -207,6 +221,9 @@ func (f *fakeClient) maybeFail(method string) error {
 	f.attempts[method]++
 	if err, ok := f.errByMethod[method]; ok {
 		return err
+	}
+	if f.broken {
+		return netErr{msg: "connection refused"}
 	}
 	return nil
 }
