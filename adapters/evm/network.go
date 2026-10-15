@@ -112,23 +112,33 @@ type Network struct {
 	pool   *endpointPool
 	stats  *counters
 	opBase string
+	// nonces allocates account nonces for this instance (spec §7.5).
+	nonces *NonceCoordinator
 }
 
 // newNetwork wires the instance around the dialed endpoint clients.
 func newNetwork(cfg NetworkConfig, clients []rpcClient) *Network {
 	stats := &counters{}
-	var pool *endpointPool
-	if len(clients) > 0 {
-		pool = newEndpointPool(clients, stats)
-	}
-	return &Network{
+	n := &Network{
 		cfg:    cfg,
 		id:     cfg.networkID(),
-		pool:   pool,
 		stats:  stats,
 		opBase: "evm." + cfg.Name,
 	}
+	if len(clients) > 0 {
+		n.pool = newEndpointPool(clients, stats)
+	}
+	// The coordinator needs the instance, and the instance needs the
+	// coordinator; each is built off the other, so wire it here rather
+	// than in the constructor's argument list.
+	n.nonces = NewNonceCoordinator(n)
+	return n
 }
+
+// NonceCoordinator returns this instance's nonce coordinator (spec §7.5).
+// Builds allocate through it so concurrent callers never claim the same
+// nonce.
+func (n *Network) NonceCoordinator() *NonceCoordinator { return n.nonces }
 
 // ID returns the logical network identity.
 func (n *Network) ID() identifiers.NetworkID { return n.id }

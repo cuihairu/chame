@@ -3,9 +3,11 @@ package evm
 import (
 	"context"
 	"math/big"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 
 	"github.com/cuihairu/chame/capability/signer"
@@ -33,9 +35,9 @@ func buildQuery() BuildQuery {
 // uint64Ptr exists so one literal can fill the optional nonce field.
 func uint64Ptr(v uint64) *uint64 { return &v }
 
-func decodeBuiltTx(t *testing.T, payload []byte) types.Transaction {
+func decodeBuiltTx(t *testing.T, payload []byte) *types.Transaction {
 	t.Helper()
-	var tx types.Transaction
+	tx := &types.Transaction{}
 	if err := tx.UnmarshalBinary(payload); err != nil {
 		t.Fatalf("built payload is not an EVM transaction: %v", err)
 	}
@@ -123,8 +125,9 @@ func TestNetworkBuildsDynamicFeeTransaction(t *testing.T) {
 	if len(tx.AccessList()) != 1 {
 		t.Fatalf("access list = %v, want one entry", tx.AccessList())
 	}
-	if tx.AccessList()[0].Address.Hex() != "0x00000000000000000000000000000000000000ee" {
-		t.Errorf("access list address = %s", tx.AccessList()[0].Address.Hex())
+	// The typed encoding checksums addresses, so compare case-insensitively.
+	if got := tx.AccessList()[0].Address.Hex(); !strings.EqualFold(got, "0x00000000000000000000000000000000000000ee") {
+		t.Errorf("access list address = %s", got)
 	}
 	if len(tx.AccessList()[0].StorageKeys) != 1 || tx.AccessList()[0].StorageKeys[0].Hex() != storageKeyHex {
 		t.Errorf("access list key = %v", tx.AccessList()[0].StorageKeys)
@@ -199,7 +202,7 @@ func TestNetworkBuildEstimatesGas(t *testing.T) {
 // hands out one nonce per build, without a second chain query per build.
 func TestNetworkBuildAllocatesNonce(t *testing.T) {
 	fake := newFakeClient(1)
-	fake.withPendingNonce(mustEVMAddress(prepareSender), 7)
+	fake.withPendingNonce(common.HexToAddress(prepareSender), 7)
 	n := testNetwork(t, fake)
 	q := buildQuery()
 	q.Nonce = nil
@@ -227,7 +230,7 @@ func TestNetworkBuildAllocatesNonce(t *testing.T) {
 // out, and the next build reuses it.
 func TestNetworkBuildAbandonsNonceOnFailure(t *testing.T) {
 	fake := newFakeClient(1)
-	fake.withPendingNonce(mustEVMAddress(prepareSender), 7)
+	fake.withPendingNonce(common.HexToAddress(prepareSender), 7)
 	fake.fail("estimate_gas", netErr{msg: "execution reverted"})
 	n := testNetwork(t, fake)
 	q := buildQuery()
@@ -242,6 +245,8 @@ func TestNetworkBuildAbandonsNonceOnFailure(t *testing.T) {
 	if snap.Allocated != 0 || snap.Next != 8 {
 		t.Errorf("snapshot = %+v, want the nonce back in the pool", snap)
 	}
+	// The estimate recovers, and the same nonce is handed out again.
+	fake.clear("estimate_gas").withEstimateGas(88_000)
 	built, err := n.Build(context.Background(), q)
 	if err != nil {
 		t.Fatalf("retry: %v", err)
@@ -397,7 +402,7 @@ func TestNetworkBuildRejectsInvalidQueries(t *testing.T) {
 // request: the deadline is reached while the node is still estimating.
 func TestNetworkBuildHonorsDeadline(t *testing.T) {
 	fake := newFakeClient(1)
-	fake.withPendingNonce(mustEVMAddress(prepareSender), 7)
+	fake.withPendingNonce(common.HexToAddress(prepareSender), 7)
 	fake.withSlowEstimate(50 * time.Millisecond)
 	n := testNetwork(t, fake)
 	q := buildQuery()

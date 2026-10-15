@@ -72,7 +72,7 @@ type fakeClient struct {
 	estimateGas   uint64
 	estimateCalls []ethereum.CallMsg
 	// gasPrice and gasTipCap pin the fee suggestion a node reports.
-	gasPrice *big.Int
+	gasPrice  *big.Int
 	gasTipCap *big.Int
 	// slowEstimate makes every estimate block for this long, so a test
 	// can watch a deadline expire mid-build.
@@ -98,6 +98,14 @@ func newFakeClient(chainID uint64) *fakeClient {
 
 func (f *fakeClient) fail(method string, err error) *fakeClient {
 	f.errByMethod[method] = err
+	return f
+}
+
+// clear lifts a pinned failure, so a test can watch a node recover.
+func (f *fakeClient) clear(method string) *fakeClient {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	delete(f.errByMethod, method)
 	return f
 }
 

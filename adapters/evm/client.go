@@ -28,6 +28,9 @@ type rpcClient interface {
 	CodeAt(ctx context.Context, account common.Address, blockNumber *big.Int) ([]byte, error)
 	CallContract(ctx context.Context, msg ethereum.CallMsg, blockNumber *big.Int) ([]byte, error)
 	FilterLogs(ctx context.Context, q ethereum.FilterQuery) ([]types.Log, error)
+	EstimateGas(ctx context.Context, msg ethereum.CallMsg) (uint64, error)
+	SuggestGasPrice(ctx context.Context) (*big.Int, error)
+	SuggestGasTipCap(ctx context.Context) (*big.Int, error)
 	SendTransaction(ctx context.Context, tx *types.Transaction) error
 	TransactionByHash(ctx context.Context, hash common.Hash) (*types.Transaction, bool, error)
 	TransactionReceipt(ctx context.Context, hash common.Hash) (*types.Receipt, error)
@@ -58,6 +61,15 @@ func (e ethRPC) CallContract(ctx context.Context, msg ethereum.CallMsg, blockNum
 }
 func (e ethRPC) FilterLogs(ctx context.Context, q ethereum.FilterQuery) ([]types.Log, error) {
 	return e.c.FilterLogs(ctx, q)
+}
+func (e ethRPC) EstimateGas(ctx context.Context, msg ethereum.CallMsg) (uint64, error) {
+	return e.c.EstimateGas(ctx, msg)
+}
+func (e ethRPC) SuggestGasPrice(ctx context.Context) (*big.Int, error) {
+	return e.c.SuggestGasPrice(ctx)
+}
+func (e ethRPC) SuggestGasTipCap(ctx context.Context) (*big.Int, error) {
+	return e.c.SuggestGasTipCap(ctx)
 }
 func (e ethRPC) SendTransaction(ctx context.Context, tx *types.Transaction) error {
 	return e.c.SendTransaction(ctx, tx)
