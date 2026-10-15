@@ -100,6 +100,37 @@ func TestRegistryAddHealthCheck(t *testing.T) {
 	}
 }
 
+// TestRegistryScopedHealthChecks pins the spec §15.3 registration surface:
+// an optional module's check is a dependency check naming the module, and
+// the store keeps the scopes separate.
+func TestRegistryScopedHealthChecks(t *testing.T) {
+	s := NewStore()
+	r := NewRegistry(s, "m")
+	ok := health.CheckFunc(func(ctx context.Context) (health.Status, error) { return health.Healthy, nil })
+	if err := r.AddScopedHealthCheck("m-process", health.Liveness, ok); err != nil {
+		t.Fatalf("scoped: %v", err)
+	}
+	if err := r.AddDependencyHealthCheck("m-solana", []string{"solana"}, ok); err != nil {
+		t.Fatalf("dependency: %v", err)
+	}
+	if err := r.AddScopedHealthCheck("m-process", health.Liveness, ok); err == nil {
+		t.Error("duplicate check should be rejected")
+	}
+	if err := r.AddScopedHealthCheck("m-bad", health.Scope("bogus"), ok); err == nil {
+		t.Error("unknown scope should be rejected")
+	}
+	checks := s.HealthChecks()
+	if got := checks.NamesInScope(health.Liveness); len(got) != 1 || got[0] != "m-process" {
+		t.Errorf("liveness checks = %v", got)
+	}
+	if got := checks.NamesInScope(health.Dependency); len(got) != 1 || got[0] != "m-solana" {
+		t.Errorf("dependency checks = %v", got)
+	}
+	if deps, _ := checks.DependsOn("m-solana"); len(deps) != 1 || deps[0] != "solana" {
+		t.Errorf("dependsOn = %v", deps)
+	}
+}
+
 func TestRegistryAddTask(t *testing.T) {
 	s := NewStore()
 	r := NewRegistry(s, "m1")

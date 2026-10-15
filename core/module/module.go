@@ -217,9 +217,30 @@ func (r Registry) Capability(name capability.Name) (any, bool) {
 	return r.store.Capability(name)
 }
 
-// AddHealthCheck registers a named health check owned by the module.
+// AddHealthCheck registers an unconditional dependency check owned by the
+// module: it counts in every report. Use AddDependencyHealthCheck for an
+// optional module, so a service that does not use it stays ready (spec
+// §15.3).
 func (r Registry) AddHealthCheck(name string, c health.Checker) error {
 	if err := r.store.healthChecks.Add(name, c); err != nil {
+		return fmt.Errorf("module %q: %w", r.owner, err)
+	}
+	return nil
+}
+
+// AddDependencyHealthCheck registers a dependency check that only counts
+// for callers using one of the named dependencies.
+func (r Registry) AddDependencyHealthCheck(name string, deps []string, c health.Checker) error {
+	if err := r.store.healthChecks.AddDependency(name, deps, c); err != nil {
+		return fmt.Errorf("module %q: %w", r.owner, err)
+	}
+	return nil
+}
+
+// AddScopedHealthCheck registers a check owned by the module in the given
+// scope (spec §15.3).
+func (r Registry) AddScopedHealthCheck(name string, scope health.Scope, c health.Checker) error {
+	if err := r.store.healthChecks.AddScoped(name, scope, c); err != nil {
 		return fmt.Errorf("module %q: %w", r.owner, err)
 	}
 	return nil

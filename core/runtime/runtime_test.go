@@ -346,6 +346,41 @@ func TestHealthChecksAggregate(t *testing.T) {
 	_ = rt.Stop(context.Background())
 }
 
+func TestReadinessSkipsUnusedDependencies(t *testing.T) {
+	rt := New()
+	_ = rt.Register(newHealthModule("hm"), module.Info{})
+	_ = rt.Register(newOptionalModule("solana", "solana"), module.Info{})
+	if err := rt.Start(context.Background()); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	t.Cleanup(func() { _ = rt.Stop(context.Background()) })
+
+	// The operator view runs everything, so the down module shows up.
+	if rep := rt.Health(context.Background()); rep.Status != health.Unhealthy {
+		t.Errorf("health = %+v, want unhealthy", rep)
+	}
+	// A service that uses neither dependency reports on its liveness only.
+	rep := rt.Readiness(context.Background(), nil)
+	if rep.Status != health.Unhealthy {
+		t.Errorf("readiness = %+v, want unhealthy: the unconditional check is still down", rep)
+	}
+	if len(rep.Results) != 1 || rep.Results[0].Name != "hm-check" {
+		t.Errorf("results = %+v, want only the unconditional check", rep.Results)
+	}
+	// A service that uses Solana reports the Solana check too.
+	rep = rt.Readiness(context.Background(), []string{"solana"})
+	if len(rep.Results) != 2 {
+		t.Errorf("results = %+v, want both dependency checks", rep.Results)
+	}
+}
+
+func TestReadinessBeforeStart(t *testing.T) {
+	rt := New()
+	if rep := rt.Readiness(context.Background(), []string{"evm"}); rep.Status != health.Healthy || len(rep.Results) != 0 {
+		t.Errorf("readiness = %+v, want empty healthy", rep)
+	}
+}
+
 func TestStopErrorsAreAggregated(t *testing.T) {
 	var events []string
 	a := newRec("a", &events)
@@ -438,6 +473,28 @@ func (m *healthModule) Register(r module.Registry) error {
 }
 func (m *healthModule) Start(ctx context.Context) error { return nil }
 func (m *healthModule) Stop(ctx context.Context) error  { return nil }
+
+// optionalModule registers a dependency health check that only counts for
+// a service that uses dep — the spec §15.3 shape of an optional chain
+// module nobody may be calling.
+type optionalModule struct {
+	name string
+	dep  string
+}
+
+func newOptionalModule(name, dep string) *optionalModule {
+	return &optionalModule{name: name, dep: dep}
+}
+
+func (m *optionalModule) Name() string { return m.name }
+func (m *optionalModule) Register(r module.Registry) error {
+	return r.AddDependencyHealthCheck(m.name+"-check", []string{m.dep},
+		health.CheckFunc(func(context.Context) (health.Status, error) {
+			return health.Unhealthy, errors.New("cluster unreachable")
+		}))
+}
+func (m *optionalModule) Start(ctx context.Context) error { return nil }
+func (m *optionalModule) Stop(ctx context.Context) error  { return nil }
 
 // taskModule registers one background task through the registry (spec
 // §4.3) and records what the task observed. The recorder is locked: the

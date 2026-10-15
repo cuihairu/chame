@@ -363,6 +363,22 @@ func (r *Runtime) Health(ctx context.Context) health.Report {
 	return store.HealthChecks().Run(ctx)
 }
 
+// Readiness runs the liveness and readiness checks plus the dependency
+// checks of the dependencies the service actually uses, where used names
+// the modules or stores the composition root wired in (spec §15.3). A
+// dependency nobody uses stays out of the report, so an unavailable
+// optional Solana module does not make a service that never touches
+// Solana unready. Health stays the operator view: it runs everything.
+func (r *Runtime) Readiness(ctx context.Context, used []string) health.Report {
+	r.mu.Lock()
+	store := r.store
+	r.mu.Unlock()
+	if store == nil {
+		return health.Report{Status: health.Healthy}
+	}
+	return store.HealthChecks().RunReadiness(ctx, used)
+}
+
 // stopStarted runs Stop on started modules in reverse order, each with a
 // per-module timeout capped by the overall shutdown timeout. A module
 // that ignores its deadline cannot block the sequence indefinitely
