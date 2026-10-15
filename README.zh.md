@@ -1,8 +1,5 @@
 # Chame
 
-[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
-[![Go](https://img.shields.io/badge/go-1.26%2B-00ADD8.svg)](https://go.dev)
-[![CI](https://github.com/cuihairu/chame/actions/workflows/ci.yml/badge.svg)](https://github.com/cuihairu/chame/actions/workflows/ci.yml)
 
 > [English](README.md) | **中文**
 
@@ -11,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/cuihairu/chame/actions"><img src="https://github.com/cuihairu/chame/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="License"></a>
-  <a href="https://go.dev/"><img src="https://img.shields.io/badge/go-1.24-00ADD8?logo=go&logoColor=white" alt="Go"></a>
+  <a href="https://go.dev/"><img src="https://img.shields.io/badge/go-1.26%2B-00ADD8?logo=go&logoColor=white" alt="Go"></a>
   <img src="https://img.shields.io/badge/status-design-orange" alt="Status">
 </p>
 
