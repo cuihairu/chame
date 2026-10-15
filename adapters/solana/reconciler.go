@@ -6,15 +6,23 @@ import (
 	"github.com/gagliardetto/solana-go/rpc"
 
 	"github.com/cuihairu/chame/capability/transaction"
+	"github.com/cuihairu/chame/core/identifiers"
 )
 
 // ChainRecord is the adapter-owned payload a Solana transaction record
-// carries in ChainData: the blockhash window the build pinned and the
-// commitment it was built at. The recovery worker reads it back to judge
-// a signature the node no longer holds.
+// carries in ChainData: the intent the flow builds from, the blockhash
+// window the build pinned with the commitment it read it at, the
+// required signer order, and the message and transaction encodings each
+// later phase needs. The recovery worker reads the pin back to judge a
+// signature the node no longer holds; a resumed flow signs and
+// broadcasts from what is stored instead of re-asking the chain.
 type ChainRecord struct {
-	Pin        BlockhashPin
-	Commitment Commitment
+	Intent     *BuildQuery           `json:"intent,omitempty"`
+	Pin        BlockhashPin          `json:"pin,omitempty"`
+	Commitment Commitment            `json:"commitment,omitempty"`
+	Signers    []identifiers.Address `json:"signers,omitempty"`
+	Unsigned   []byte                `json:"unsigned,omitempty"`
+	Signed     []byte                `json:"signed,omitempty"`
 }
 
 // StatusOf reports the strongest state the chain currently shows for one
