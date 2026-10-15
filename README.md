@@ -31,7 +31,7 @@ behind an adapter so the game side keeps one contract.
 
 ## Status
 
-**Phases 1–8 landed.** The full spec lives in
+**Phases 1–9 landed.** The full spec lives in
 [`docs/design/chame-spec.md`](docs/design/chame-spec.md) — 24 chapters covering
 architecture, adapters, transaction state machine, idempotency, event handling,
 signing, error model, observability, testing, CI, phased rollout, and a
@@ -66,10 +66,17 @@ environments; `examples/signing`), and accounts and assets (§13 — the
 records, signer-managed lookups answered from the signer's own allow-list,
 native and token balances with per-asset precision, asset metadata, and
 explicit chain-specific details, wired into both adapters so every EVM and
-Solana network serves them as module capabilities). Architecture decisions
+Solana network serves them as module capabilities), and observability
+(§14–§15 — the retry policy that answers from the error category and the
+operation's semantics rather than from a message; the §15.1 log field
+contract with a redacting handler that scrubs secret-named fields and URL
+credentials; the metrics contract with its closed label allowlist, the
+framework's metric names, and an in-process collector; and health-check
+scopes, so an unavailable optional Solana module leaves a service that
+never touches Solana ready). Architecture decisions
 live in [`docs/design/decisions.md`](docs/design/decisions.md) with detailed
 ADRs in [`docs/decisions/`](docs/decisions/). Phased implementation is
-tracked in [`todo.md`](todo.md) — next: error taxonomy and observability.
+tracked in [`todo.md`](todo.md) — next: the test system and CI.
 
 ## Development
 
