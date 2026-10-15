@@ -1,6 +1,6 @@
 > **English** | [中文](README.zh.md)
 
-<p align="center"><img src="assets/logo.jpg" alt="Chame logo" width="160" height="160"></p>
+<p align="center"><img src="assets/logo.jpg" alt="Chame logo" width="64" height="64"></p>
 
 <h1 align="center">Chame</h1>
 
