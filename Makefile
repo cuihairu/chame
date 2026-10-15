@@ -15,19 +15,19 @@ test:
 test-race:
 	$(GO) test -race -p 1 ./...
 
-# The minimal example must start, serve, and shut down cleanly on SIGTERM
-# with no chain service anywhere (spec §16.3, §22). --preserve-status
-# makes the child's exit code ours: a hang fails the target.
+# Every example must start, run, and shut down cleanly on SIGTERM with no
+# chain service anywhere (spec §16.3, §22). --preserve-status makes the
+# child's exit code ours: a hang fails the target.
 examples:
-	@bin=$$(mktemp -d); \
-	$(GO) build -o $$bin/minimal ./examples/minimal; \
-	status=$$?; \
-	if [ $$status -eq 0 ]; then \
-		timeout -k 5s --preserve-status 15s $$bin/minimal > $$bin/out 2>&1; status=$$?; \
-		if ! grep -q "clean shutdown" $$bin/out; then \
-			echo "minimal example did not shut down cleanly:"; cat $$bin/out; status=1; \
+	@bin=$$(mktemp -d); status=0; \
+	for ex in minimal eventstream; do \
+		$(GO) build -o $$bin/$$ex ./examples/$$ex || { status=$$?; break; }; \
+		timeout -k 5s --preserve-status 15s $$bin/$$ex > $$bin/$$ex.out 2>&1; run=$$?; \
+		if [ $$run -ne 0 ]; then status=$$run; break; fi; \
+		if ! grep -q "clean shutdown" $$bin/$$ex.out; then \
+			echo "$$ex example did not shut down cleanly:"; cat $$bin/$$ex.out; status=1; break; \
 		fi; \
-	fi; \
+	done; \
 	rm -rf $$bin; exit $$status
 
 vet:
