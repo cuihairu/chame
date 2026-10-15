@@ -61,11 +61,13 @@ func New(opts Options) (*slog.Logger, error) {
 	} else {
 		h = slog.NewJSONHandler(os.Stderr, hopts)
 	}
-	return slog.New(h), nil
+	// The framework logger redacts by default: a logger that could
+	// leak credentials would defeat the spec's field rules (spec §15.1).
+	return slog.New(Redacting(h)), nil
 }
 
 // WithModule returns a logger annotated with the module name, so log
 // lines from different modules stay attributable (spec §15.1).
 func WithModule(l *slog.Logger, module string) *slog.Logger {
-	return l.With(slog.String("module", module))
+	return l.With(Module(module))
 }
