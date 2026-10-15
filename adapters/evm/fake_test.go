@@ -2,6 +2,7 @@ package evm
 
 import (
 	"context"
+	"encoding/hex"
 	"fmt"
 	"math/big"
 	"sync"
@@ -25,12 +26,23 @@ type fakeClient struct {
 	blockNumber uint64
 	balance     *big.Int
 	callReply   []byte
+	code        []byte
 	logs        []types.Log
+
+	// codeByAddress overrides the code reported for one address, keyed by
+	// lowercase hex, so tests can simulate contract and key-backed
+	// accounts side by side.
+	codeByAddress map[string][]byte
+
+	// selectorReply overrides the reply for one four-byte selector, so
+	// tests can answer several functions of one contract at once.
+	selectorReply map[string][]byte
 
 	// Captures.
 	calls    []ethereum.CallMsg
 	queries  []ethereum.FilterQuery
 	balances []common.Address
+	codes    []common.Address
 	closed   bool
 	attempts map[string]int
 }
@@ -66,6 +78,25 @@ func (f *fakeClient) capturedCalls() []ethereum.CallMsg {
 	return append([]ethereum.CallMsg(nil), f.calls...)
 }
 
+// withCode pins the code reported for addr.
+func (f *fakeClient) withCode(addr common.Address, code []byte) *fakeClient {
+	if f.codeByAddress == nil {
+		f.codeByAddress = map[string][]byte{}
+	}
+	f.codeByAddress[addr.Hex()] = code
+	return f
+}
+
+// withCall pins the reply for one selector, given as hex without the
+// 0x prefix.
+func (f *fakeClient) withCall(selector string, reply []byte) *fakeClient {
+	if f.selectorReply == nil {
+		f.selectorReply = map[string][]byte{}
+	}
+	f.selectorReply[selector] = reply
+	return f
+}
+
 func (f *fakeClient) capturedQueries() []ethereum.FilterQuery {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -76,6 +107,12 @@ func (f *fakeClient) capturedBalances() []common.Address {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return append([]common.Address(nil), f.balances...)
+}
+
+func (f *fakeClient) capturedCodes() []common.Address {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]common.Address(nil), f.codes...)
 }
 
 func (f *fakeClient) maybeFail(method string) error {
@@ -123,12 +160,32 @@ func (f *fakeClient) BalanceAt(ctx context.Context, account common.Address, bloc
 	return new(big.Int).Set(bal), nil
 }
 
+func (f *fakeClient) CodeAt(ctx context.Context, account common.Address, blockNumber *big.Int) ([]byte, error) {
+	if err := f.maybeFail("code_at"); err != nil {
+		return nil, err
+	}
+	f.mu.Lock()
+	f.codes = append(f.codes, account)
+	code, ok := f.codeByAddress[account.Hex()]
+	f.mu.Unlock()
+	if !ok {
+		return f.code, nil
+	}
+	return code, nil
+}
+
 func (f *fakeClient) CallContract(ctx context.Context, msg ethereum.CallMsg, blockNumber *big.Int) ([]byte, error) {
 	if err := f.maybeFail("call_contract"); err != nil {
 		return nil, err
 	}
 	f.mu.Lock()
 	f.calls = append(f.calls, msg)
+	if len(msg.Data) >= 4 {
+		if reply, ok := f.selectorReply[hex.EncodeToString(msg.Data[:4])]; ok {
+			f.mu.Unlock()
+			return reply, nil
+		}
+	}
 	f.mu.Unlock()
 	return f.callReply, nil
 }

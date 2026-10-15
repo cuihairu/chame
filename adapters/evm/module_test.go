@@ -60,13 +60,30 @@ func TestModuleServesMultipleNetworks(t *testing.T) {
 	clients, mainA, base, arb := threeNetClients()
 	store, _ := startModule(t, threeNetConfig(), clients)
 
-	raw, ok := store.Capability(capability.Network)
-	if !ok {
+	raw, found := store.Capability(capability.Network)
+	if !found {
 		t.Fatal("network capability not registered")
 	}
 	adapter, ok := raw.(*Adapter)
 	if !ok {
 		t.Fatalf("capability type = %T, want *Adapter", raw)
+	}
+	// The one adapter value is published as every capability the module
+	// declares, so consumers pick the entry point they need.
+	for _, name := range []capability.Name{capability.Account, capability.Asset} {
+		other, ok := store.Capability(name)
+		if !ok {
+			t.Fatalf("%s capability not registered", name)
+		}
+		if other != raw {
+			t.Errorf("%s capability = %p, want the network adapter %p", name, other, raw)
+		}
+	}
+	if _, ok := adapter.AssetProvider(netID("mainnet", 1)); !ok {
+		t.Error("asset provider for mainnet must resolve")
+	}
+	if _, ok := adapter.AssetProvider(netID("unknown", 7)); ok {
+		t.Error("unknown network must not resolve an asset provider")
 	}
 	if got := adapter.Networks(); len(got) != 3 {
 		t.Fatalf("networks = %v, want 3", got)
@@ -89,6 +106,19 @@ func TestModuleServesMultipleNetworks(t *testing.T) {
 	if base.callCount("balance_at") != 1 || mainA.callCount("balance_at") != 0 || arb.callCount("balance_at") != 0 {
 		t.Errorf("cross-network leak: main=%d base=%d arb=%d",
 			mainA.callCount("balance_at"), base.callCount("balance_at"), arb.callCount("balance_at"))
+	}
+}
+
+func TestModuleInfo(t *testing.T) {
+	want := []capability.Name{capability.Network, capability.Account, capability.Asset}
+	got := New(threeNetConfig()).Info().Provides
+	if len(got) != len(want) {
+		t.Fatalf("provides = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("provides[%d] = %s, want %s", i, got[i], want[i])
+		}
 	}
 }
 

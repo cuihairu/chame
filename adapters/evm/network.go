@@ -270,6 +270,31 @@ func (n *Network) TokenBalance(ctx context.Context, token, holder identifiers.Ad
 	return bal, nil
 }
 
+// CodeAt returns the code stored at account. Code-bearing addresses are
+// contracts (or delegated signers); addresses without code are
+// externally owned (spec §13.1).
+func (n *Network) CodeAt(ctx context.Context, account identifiers.Address) ([]byte, error) {
+	addr, err := toCommon(n.opBase+".code_at", account)
+	if err != nil {
+		n.stats.countError()
+		return nil, err
+	}
+	ctx, cancel := n.withTimeout(ctx)
+	defer cancel()
+	n.stats.countRequest()
+	var out []byte
+	err = n.pool.call(ctx, n.id.String(), n.opBase+".code_at", func(c rpcClient) error {
+		var e error
+		out, e = c.CodeAt(ctx, addr, nil)
+		return e
+	})
+	if err != nil {
+		n.stats.countError()
+		return nil, err
+	}
+	return out, nil
+}
+
 // Call performs a read-only contract call (eth_call).
 func (n *Network) Call(ctx context.Context, q CallQuery) ([]byte, error) {
 	to, err := toCommon(n.opBase+".call", q.To)
@@ -406,6 +431,38 @@ func balanceOfCall(holder common.Address) []byte {
 	copy(data[:4], []byte{0x70, 0xa0, 0x82, 0x31}) // keccak("balanceOf(address)")[:4]
 	copy(data[4:], common.BytesToHash(holder.Bytes()).Bytes())
 	return data
+}
+
+// selectorCall encodes a no-argument function by selector only.
+func selectorCall(sel [4]byte) []byte {
+	data := make([]byte, 4)
+	copy(data, sel[:])
+	return data
+}
+
+// abiUint8 decodes a no-argument call that returns a single uint value,
+// taking its last byte as the uint8 payload.
+func abiUint8(op string, out []byte) (uint8, error) {
+	if len(out) != 32 {
+		return 0, cherrs.New(cherrs.EventDecodeFailure, op,
+			"want 32-byte response, got %d bytes", len(out))
+	}
+	return out[31], nil
+}
+
+// abiString decodes a no-argument call that returns a single ABI string:
+// offset word, length word, then the zero-padded value.
+func abiString(op string, out []byte) (string, error) {
+	if len(out) < 64 {
+		return "", cherrs.New(cherrs.EventDecodeFailure, op,
+			"want at least a 64-byte response, got %d bytes", len(out))
+	}
+	length := new(big.Int).SetBytes(out[32:64]).Uint64()
+	if uint64(len(out))-64 < length || length > 32*1024 {
+		return "", cherrs.New(cherrs.EventDecodeFailure, op,
+			"string length %d overruns the %d-byte response", length, uint64(len(out))-64)
+	}
+	return string(out[64 : 64+length]), nil
 }
 
 // abiWord decodes a single 32-byte ABI word response.

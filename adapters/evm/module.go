@@ -6,6 +6,8 @@ import (
 	"log/slog"
 	"sync"
 
+	"github.com/cuihairu/chame/capability/account"
+	"github.com/cuihairu/chame/capability/asset"
 	"github.com/cuihairu/chame/core/capability"
 	cherrs "github.com/cuihairu/chame/core/errors"
 	"github.com/cuihairu/chame/core/health"
@@ -29,6 +31,26 @@ func (a *Adapter) Network(id identifiers.NetworkID) (*Network, bool) {
 // Networks lists the configured network identities in config order.
 func (a *Adapter) Networks() []identifiers.NetworkID {
 	return append([]identifiers.NetworkID(nil), a.order...)
+}
+
+// AccountProvider exposes the account capability for one network
+// (spec §13.1).
+func (a *Adapter) AccountProvider(id identifiers.NetworkID) (account.Provider, bool) {
+	n, ok := a.networks[id]
+	if !ok {
+		return nil, false
+	}
+	return n.AccountProvider(), true
+}
+
+// AssetProvider exposes the asset capability for one network
+// (spec §13.2).
+func (a *Adapter) AssetProvider(id identifiers.NetworkID) (asset.Provider, bool) {
+	n, ok := a.networks[id]
+	if !ok {
+		return nil, false
+	}
+	return n.AssetProvider(), true
 }
 
 // Module is the EVM adapter as a chame module (spec §7.3).
@@ -65,13 +87,15 @@ func New(cfg Config, opts ...Option) *Module {
 // Name implements module.Module.
 func (m *Module) Name() string { return "evm" }
 
-// Info declares what the module provides: the network capability family.
+// Info declares what the module provides: the network capability family
+// plus the account and asset providers (spec §13).
 func (m *Module) Info() module.Info {
-	return module.Info{Provides: []capability.Name{capability.Network}}
+	return module.Info{Provides: []capability.Name{capability.Network, capability.Account, capability.Asset}}
 }
 
-// Register validates the config, publishes the adapter capability,
-// and registers one health check per network.
+// Register validates the config, publishes the adapter as the network,
+// account and asset capability value, and registers one health check per
+// network.
 func (m *Module) Register(reg module.Registry) error {
 	if err := m.cfg.Validate(); err != nil {
 		return err
@@ -83,7 +107,13 @@ func (m *Module) Register(reg module.Registry) error {
 			return err
 		}
 	}
-	return reg.PutCapability(capability.Network, a)
+	if err := reg.PutCapability(capability.Network, a); err != nil {
+		return err
+	}
+	if err := reg.PutCapability(capability.Account, a); err != nil {
+		return err
+	}
+	return reg.PutCapability(capability.Asset, a)
 }
 
 // Start dials every configured network and verifies chain identity.
