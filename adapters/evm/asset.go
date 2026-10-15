@@ -57,10 +57,6 @@ func (p *AssetProvider) Asset(ctx context.Context, id identifiers.AssetID) (asse
 			Details:  []asset.Detail{{Key: "base_unit", Value: "wei"}},
 		}, nil
 	}
-	if id.Kind != identifiers.KindEVMToken {
-		return asset.AssetInfo{}, cherrs.New(cherrs.UnsupportedCapability, p.net.opBase+".asset",
-			"asset kind %q is not served by the evm adapter", id.Kind)
-	}
 	op := p.net.opBase + ".asset"
 	decimals, err := p.tokenUint8(ctx, id.Address, decimalsSelector, op+".decimals")
 	if err != nil {
@@ -114,6 +110,9 @@ func (p *AssetProvider) Balance(ctx context.Context, id identifiers.AssetID, hol
 func (p *AssetProvider) Healthy(ctx context.Context) error { return p.net.Healthy(ctx) }
 
 // checkAsset validates the asset identifier and pins it to this network.
+// The kind is part of the asset identity: a kind this family does not
+// serve is an explicit unsupported error on every path, never a chain
+// call (spec §16.2).
 func (p *AssetProvider) checkAsset(id identifiers.AssetID) error {
 	if err := id.Validate(); err != nil {
 		return cherrs.New(cherrs.InvalidArgument, p.net.opBase+".asset", "%v", err)
@@ -121,6 +120,10 @@ func (p *AssetProvider) checkAsset(id identifiers.AssetID) error {
 	if !id.Network.Equal(p.net.id) {
 		return cherrs.New(cherrs.InvalidArgument, p.net.opBase+".asset",
 			"asset network %s is not this network %s", id.Network, p.net.id)
+	}
+	if id.Kind != identifiers.KindNative && id.Kind != identifiers.KindEVMToken {
+		return cherrs.New(cherrs.UnsupportedCapability, p.net.opBase+".asset",
+			"asset kind %q is not served by the evm adapter", id.Kind)
 	}
 	return nil
 }

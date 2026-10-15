@@ -59,6 +59,10 @@ type fakeClient struct {
 	signatures    []*rpcTransactionSignature
 	signatureStat []*rpcSignatureStatusesResult
 
+	// missingAccounts makes the node report null for these addresses,
+	// like an address it has never seen.
+	missingAccounts map[solana.PublicKey]bool
+
 	// Captures.
 	commitments []Commitment
 	accounts    []solana.PublicKey
@@ -103,6 +107,16 @@ func (f *fakeClient) capturedAccounts() []solana.PublicKey {
 	return append([]solana.PublicKey(nil), f.accounts...)
 }
 
+// withMissing makes the node report null for addr: an address it has
+// never seen.
+func (f *fakeClient) withMissing(addr solana.PublicKey) *fakeClient {
+	if f.missingAccounts == nil {
+		f.missingAccounts = map[solana.PublicKey]bool{}
+	}
+	f.missingAccounts[addr] = true
+	return f
+}
+
 func (f *fakeClient) maybeFail(method string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -139,7 +153,11 @@ func (f *fakeClient) Balance(ctx context.Context, account solana.PublicKey, comm
 	f.mu.Lock()
 	f.commitments = append(f.commitments, Commitment(commitment))
 	f.accounts = append(f.accounts, account)
+	missing := f.missingAccounts[account]
 	f.mu.Unlock()
+	if missing {
+		return 0, nil
+	}
 	return f.lamports, nil
 }
 
@@ -152,7 +170,11 @@ func (f *fakeClient) AccountInfo(ctx context.Context, account solana.PublicKey, 
 		f.commitments = append(f.commitments, Commitment(opts.Commitment))
 	}
 	f.accounts = append(f.accounts, account)
+	missing := f.missingAccounts[account]
 	f.mu.Unlock()
+	if missing {
+		return nil, nil
+	}
 	return f.account, nil
 }
 

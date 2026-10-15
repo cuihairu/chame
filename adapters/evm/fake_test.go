@@ -34,6 +34,11 @@ type fakeClient struct {
 	// accounts side by side.
 	codeByAddress map[string][]byte
 
+	// balanceByAddress overrides the balance reported for one address,
+	// keyed by lowercase hex, so tests can simulate funded and empty
+	// accounts side by side.
+	balanceByAddress map[string]*big.Int
+
 	// selectorReply overrides the reply for one four-byte selector, so
 	// tests can answer several functions of one contract at once.
 	selectorReply map[string][]byte
@@ -84,6 +89,15 @@ func (f *fakeClient) withCode(addr common.Address, code []byte) *fakeClient {
 		f.codeByAddress = map[string][]byte{}
 	}
 	f.codeByAddress[addr.Hex()] = code
+	return f
+}
+
+// withBalance pins the balance reported for addr.
+func (f *fakeClient) withBalance(addr common.Address, bal *big.Int) *fakeClient {
+	if f.balanceByAddress == nil {
+		f.balanceByAddress = map[string]*big.Int{}
+	}
+	f.balanceByAddress[addr.Hex()] = bal
 	return f
 }
 
@@ -152,7 +166,10 @@ func (f *fakeClient) BalanceAt(ctx context.Context, account common.Address, bloc
 	}
 	f.mu.Lock()
 	f.balances = append(f.balances, account)
-	bal := f.balance
+	bal, ok := f.balanceByAddress[account.Hex()]
+	if !ok {
+		bal = f.balance
+	}
 	f.mu.Unlock()
 	if bal == nil {
 		return new(big.Int), nil
