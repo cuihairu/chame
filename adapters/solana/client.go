@@ -21,6 +21,8 @@ import (
 type rpcClient interface {
 	GenesisHash(ctx context.Context) (solana.Hash, error)
 	Slot(ctx context.Context, commitment rpc.CommitmentType) (uint64, error)
+	BlockHeight(ctx context.Context, commitment rpc.CommitmentType) (uint64, error)
+	LatestBlockhash(ctx context.Context, commitment rpc.CommitmentType) (*latestBlockhashResult, error)
 	Balance(ctx context.Context, account solana.PublicKey, commitment rpc.CommitmentType) (uint64, error)
 	AccountInfo(ctx context.Context, account solana.PublicKey, opts *rpc.GetAccountInfoOpts) (*rpc.GetAccountInfoResult, error)
 	TokenBalance(ctx context.Context, account solana.PublicKey, commitment rpc.CommitmentType) (*rpc.GetTokenAccountBalanceResult, error)
@@ -28,7 +30,7 @@ type rpcClient interface {
 	Transaction(ctx context.Context, sig solana.Signature, opts *rpc.GetTransactionOpts) (*rpc.GetTransactionResult, error)
 	Block(ctx context.Context, slot uint64, opts *rpc.GetBlockOpts) (*rpc.GetBlockResult, error)
 	Signatures(ctx context.Context, account solana.PublicKey, opts *rpc.GetSignaturesForAddressOpts) ([]*rpc.TransactionSignature, error)
-	SignatureStatus(ctx context.Context, sig solana.Signature) ([]*rpc.SignatureStatusesResult, error)
+	SignatureStatus(ctx context.Context, sig solana.Signature, searchHistory bool) ([]*rpc.SignatureStatusesResult, error)
 	Close() error
 }
 
@@ -39,6 +41,14 @@ func (s solRPC) GenesisHash(ctx context.Context) (solana.Hash, error) { return s
 
 func (s solRPC) Slot(ctx context.Context, commitment rpc.CommitmentType) (uint64, error) {
 	return s.c.GetSlot(ctx, commitment)
+}
+
+func (s solRPC) BlockHeight(ctx context.Context, commitment rpc.CommitmentType) (uint64, error) {
+	return s.c.GetBlockHeight(ctx, commitment)
+}
+
+func (s solRPC) LatestBlockhash(ctx context.Context, commitment rpc.CommitmentType) (*latestBlockhashResult, error) {
+	return s.c.GetLatestBlockhash(ctx, commitment)
 }
 
 func (s solRPC) Balance(ctx context.Context, account solana.PublicKey, commitment rpc.CommitmentType) (uint64, error) {
@@ -75,9 +85,10 @@ func (s solRPC) Signatures(ctx context.Context, account solana.PublicKey, opts *
 
 // SignatureStatus reports the per-signature entries of getSignatureStatuses.
 // A nil slice with a nil error means the node holds no status for the
-// signature at all.
-func (s solRPC) SignatureStatus(ctx context.Context, sig solana.Signature) ([]*rpc.SignatureStatusesResult, error) {
-	out, err := s.c.GetSignatureStatuses(ctx, false, sig)
+// signature at all. searchHistory asks the node to search its ledger rather
+// than answer from the recent status cache (spec §8.4).
+func (s solRPC) SignatureStatus(ctx context.Context, sig solana.Signature, searchHistory bool) ([]*rpc.SignatureStatusesResult, error) {
+	out, err := s.c.GetSignatureStatuses(ctx, searchHistory, sig)
 	if err != nil {
 		return nil, err
 	}

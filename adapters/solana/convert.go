@@ -30,6 +30,7 @@ type (
 	blockResult                    = rpc.GetBlockResult
 	rpcGetBlockOpts                = rpc.GetBlockOpts
 	rpcTransactionSignature        = rpc.TransactionSignature
+	latestBlockhashResult          = rpc.GetLatestBlockhashResult
 	rpcGetSignaturesForAddressOpts = rpc.GetSignaturesForAddressOpts
 	rpcSignatureStatusesResult     = rpc.SignatureStatusesResult
 )

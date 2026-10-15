@@ -536,7 +536,7 @@ func (n *Network) TransactionStatus(ctx context.Context, sig string) (*Confirmat
 	var entries []*rpcSignatureStatusesResult
 	err = n.pool.call(ctx, n.id.String(), n.opBase+".transaction_status", func(rc rpcClient) error {
 		var e error
-		entries, e = rc.SignatureStatus(ctx, s)
+		entries, e = rc.SignatureStatus(ctx, s, false)
 		return e
 	})
 	if err != nil {
@@ -551,14 +551,7 @@ func (n *Network) TransactionStatus(ctx context.Context, sig string) (*Confirmat
 	if len(entries) == 0 || entries[0] == nil {
 		return nil, nil
 	}
-	e := entries[0]
-	return &ConfirmationStatus{
-		Signature:     sig,
-		Slot:          e.Slot,
-		Confirmations: uint64OrZero(e.Confirmations),
-		ErrDetail:     errDetail(e.Err),
-		Status:        string(e.ConfirmationStatus),
-	}, nil
+	return confirmationStatus(sig, entries[0]), nil
 }
 
 // Stats returns the network's counters.

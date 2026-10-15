@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/gagliardetto/solana-go"
+	"github.com/gagliardetto/solana-go/rpc"
 )
 
 // Canonical Solana program ids, used as valid 32-byte base58 accounts.
@@ -71,6 +72,14 @@ type fakeClient struct {
 	// blocksBySlot overrides the block reported for one slot; a slot
 	// without one answers nil, like a skipped slot.
 	blocksBySlot map[uint64]*blockResult
+
+	// blockhash and lastValidBlockHeight pin the getLatestBlockhash
+	// answer; blockHeight pins getBlockHeight.
+	blockhash            solana.Hash
+	lastValidBlockHeight uint64
+	blockHeight          uint64
+	// historySearchCalls counts ledger-wide signature status queries.
+	historySearchCalls int
 
 	// Captures.
 	commitments []Commitment
@@ -262,13 +271,64 @@ func (f *fakeClient) Signatures(ctx context.Context, account solana.PublicKey, o
 	return f.signatures, nil
 }
 
-func (f *fakeClient) SignatureStatus(ctx context.Context, sig solana.Signature) ([]*rpcSignatureStatusesResult, error) {
+func (f *fakeClient) SignatureStatus(ctx context.Context, sig solana.Signature, searchHistory bool) ([]*rpcSignatureStatusesResult, error) {
 	if err := f.maybeFail("signature_status"); err != nil {
 		return nil, err
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if searchHistory {
+		f.historySearchCalls++
+	}
 	return f.signatureStat, nil
+}
+
+// LatestBlockhash answers the pinned blockhash at the caller's
+// commitment.
+func (f *fakeClient) LatestBlockhash(ctx context.Context, commitment rpcCommitmentType) (*latestBlockhashResult, error) {
+	if err := f.maybeFail("latest_blockhash"); err != nil {
+		return nil, err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.commitments = append(f.commitments, Commitment(commitment))
+	return &latestBlockhashResult{
+		Value: &rpc.LatestBlockhashResult{Blockhash: f.blockhash, LastValidBlockHeight: f.lastValidBlockHeight},
+	}, nil
+}
+
+// BlockHeight answers the pinned block height at the caller's commitment.
+func (f *fakeClient) BlockHeight(ctx context.Context, commitment rpcCommitmentType) (uint64, error) {
+	if err := f.maybeFail("block_height"); err != nil {
+		return 0, err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.commitments = append(f.commitments, Commitment(commitment))
+	return f.blockHeight, nil
+}
+
+func (f *fakeClient) historySearches() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.historySearchCalls
+}
+
+// withBlockhash pins the getLatestBlockhash answer.
+func (f *fakeClient) withBlockhash(hash solana.Hash, lastValidBlockHeight uint64) *fakeClient {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.blockhash = hash
+	f.lastValidBlockHeight = lastValidBlockHeight
+	return f
+}
+
+// withBlockHeight pins the getBlockHeight answer.
+func (f *fakeClient) withBlockHeight(height uint64) *fakeClient {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.blockHeight = height
+	return f
 }
 
 func (f *fakeClient) Close() error {
