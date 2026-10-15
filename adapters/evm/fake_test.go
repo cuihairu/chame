@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"math/big"
+	"strings"
 	"sync"
 
 	"github.com/ethereum/go-ethereum"
@@ -28,6 +29,17 @@ type fakeClient struct {
 	callReply   []byte
 	code        []byte
 	logs        []types.Log
+
+	// receiptsByHash pins the receipt served for a transaction hash,
+	// keyed by lowercase hex, so tests can serve mined and reverted
+	// outcomes side by side.
+	receiptsByHash map[string]*types.Receipt
+
+	// pooledByHash pins a transaction the node still holds in its
+	// mempool, so tests can tell "not mined yet" from "never known".
+	pooledByHash map[string]*types.Transaction
+
+	sentTxs []*types.Transaction
 
 	// headersByNumber overrides the header reported for one height, so
 	// tests can serve several distinct blocks side by side.
@@ -287,6 +299,63 @@ func (f *fakeClient) FilterLogs(ctx context.Context, q ethereum.FilterQuery) ([]
 		out = append(out, l)
 	}
 	return out, nil
+}
+
+// withReceipt pins the receipt served for a transaction hash.
+func (f *fakeClient) withReceipt(hash string, r *types.Receipt) *fakeClient {
+	if f.receiptsByHash == nil {
+		f.receiptsByHash = map[string]*types.Receipt{}
+	}
+	f.receiptsByHash[strings.ToLower(hash)] = r
+	return f
+}
+
+// withPooled pins a transaction the node still holds in its mempool,
+// so a receipt lookup reports "not mined yet" instead of "never known".
+func (f *fakeClient) withPooled(hash string, tx *types.Transaction) *fakeClient {
+	if f.pooledByHash == nil {
+		f.pooledByHash = map[string]*types.Transaction{}
+	}
+	f.pooledByHash[strings.ToLower(hash)] = tx
+	return f
+}
+
+func (f *fakeClient) SendTransaction(ctx context.Context, tx *types.Transaction) error {
+	if err := f.maybeFail("send_transaction"); err != nil {
+		return err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.sentTxs = append(f.sentTxs, tx)
+	return nil
+}
+
+func (f *fakeClient) TransactionByHash(ctx context.Context, hash common.Hash) (*types.Transaction, bool, error) {
+	if err := f.maybeFail("transaction_by_hash"); err != nil {
+		return nil, false, err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	tx, pooled := f.pooledByHash[hash.Hex()]
+	if !pooled {
+		return nil, false, nil
+	}
+	return tx, true, nil
+}
+
+func (f *fakeClient) TransactionReceipt(ctx context.Context, hash common.Hash) (*types.Receipt, error) {
+	if err := f.maybeFail("transaction_receipt"); err != nil {
+		return nil, err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.receiptsByHash[hash.Hex()], nil
+}
+
+func (f *fakeClient) capturedSent() []*types.Transaction {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]*types.Transaction(nil), f.sentTxs...)
 }
 
 func (f *fakeClient) Close() {

@@ -28,6 +28,9 @@ type rpcClient interface {
 	CodeAt(ctx context.Context, account common.Address, blockNumber *big.Int) ([]byte, error)
 	CallContract(ctx context.Context, msg ethereum.CallMsg, blockNumber *big.Int) ([]byte, error)
 	FilterLogs(ctx context.Context, q ethereum.FilterQuery) ([]types.Log, error)
+	SendTransaction(ctx context.Context, tx *types.Transaction) error
+	TransactionByHash(ctx context.Context, hash common.Hash) (*types.Transaction, bool, error)
+	TransactionReceipt(ctx context.Context, hash common.Hash) (*types.Receipt, error)
 	Close()
 }
 
@@ -55,6 +58,15 @@ func (e ethRPC) CallContract(ctx context.Context, msg ethereum.CallMsg, blockNum
 }
 func (e ethRPC) FilterLogs(ctx context.Context, q ethereum.FilterQuery) ([]types.Log, error) {
 	return e.c.FilterLogs(ctx, q)
+}
+func (e ethRPC) SendTransaction(ctx context.Context, tx *types.Transaction) error {
+	return e.c.SendTransaction(ctx, tx)
+}
+func (e ethRPC) TransactionByHash(ctx context.Context, hash common.Hash) (*types.Transaction, bool, error) {
+	return e.c.TransactionByHash(ctx, hash)
+}
+func (e ethRPC) TransactionReceipt(ctx context.Context, hash common.Hash) (*types.Receipt, error) {
+	return e.c.TransactionReceipt(ctx, hash)
 }
 func (e ethRPC) Close() { e.c.Close() }
 
