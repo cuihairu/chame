@@ -43,6 +43,19 @@ func startModule(t *testing.T, cfg Config, clients map[string]rpcClient) (*modul
 	return store, m
 }
 
+// sameNames compares capability lists in order.
+func sameNames(got, want []capability.Name) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			return false
+		}
+	}
+	return true
+}
+
 func twoNetClients() (map[string]rpcClient, *fakeClient, *fakeClient, *fakeClient) {
 	mainA, mainB := newFakeClient(solanaHashFor(0x10)), newFakeClient(solanaHashFor(0x10))
 	dev := newFakeClient(solanaHashFor(0x20))
@@ -177,27 +190,39 @@ func TestModuleRegisterRejectsBadConfig(t *testing.T) {
 	}
 }
 
-// TestModuleReadOnlyContract pins ADR-0003: the adapter publishes the
-// network family only, and every other capability returns an explicit
-// unsupported error instead of a broken call.
+// TestModuleReadOnlyContract pins ADR-0003: the adapter ships only
+// read-only families — the network family plus the account and asset
+// providers (spec §13) — and every write capability answers with an
+// explicit unsupported error instead of a broken call.
 func TestModuleReadOnlyContract(t *testing.T) {
 	clients, _, _, _ := twoNetClients()
 	store, m := startModule(t, twoNetConfig(), clients)
 
-	if got := m.Info().Provides; len(got) != 1 || got[0] != capability.Network {
-		t.Fatalf("provides = %v, want [network]", got)
+	readOnly := []capability.Name{capability.Network, capability.Account, capability.Asset}
+	if got := m.Info().Provides; !sameNames(got, readOnly) {
+		t.Fatalf("provides = %v, want %v", got, readOnly)
 	}
 	raw, _ := store.Capability(capability.Network)
 	adapter := raw.(*Adapter)
-	if got := adapter.Capabilities(); len(got) != 1 || got[0] != capability.Network {
-		t.Fatalf("capabilities = %v, want [network]", got)
+	if got := adapter.Capabilities(); !sameNames(got, readOnly) {
+		t.Fatalf("capabilities = %v, want %v", got, readOnly)
 	}
-	if !adapter.Supported(capability.Network) {
-		t.Fatal("network must be supported")
+	// One adapter value serves every family it declares.
+	for _, name := range []capability.Name{capability.Account, capability.Asset} {
+		if other, ok := store.Capability(name); !ok {
+			t.Fatalf("%s capability not registered", name)
+		} else if other != raw {
+			t.Errorf("%s capability = %p, want the network adapter %p", name, other, raw)
+		}
+	}
+	for _, name := range readOnly {
+		if !adapter.Supported(name) {
+			t.Errorf("%s must be supported", name)
+		}
 	}
 	for _, name := range []capability.Name{
 		capability.Transaction, capability.Signer, capability.Event,
-		capability.Finality, capability.Account, capability.Asset, capability.Contract,
+		capability.Finality, capability.Contract,
 	} {
 		if adapter.Supported(name) {
 			t.Errorf("%s must not be provided in the read-only phase", name)

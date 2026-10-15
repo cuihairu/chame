@@ -29,7 +29,7 @@ Chame 把链收进适配器，游戏侧保持同一份契约。
 
 ## 当前状态
 
-**阶段一至七已落地。** 完整规格见
+**阶段一至八已落地。** 完整规格见
 [`docs/design/chame-spec.md`](docs/design/chame-spec.md)——共 24 章，覆盖架构、
 适配器、交易状态机、幂等、事件处理、签名、错误模型、可观测性、测试、CI、
 分期实施与完成定义。
@@ -50,11 +50,15 @@ Genesis Hash 校验、账户/原生/SPL Token 查询、交易与签名历史、C
 Registry 注册位），以及签名与密钥安全（§12——`capability/signer` 契约：
 每次请求显式目标网络与账户、Allow-list 授权、载荷摘要审计条目、脱敏的
 Secret 类型；确定性测试签名器；拒绝生产环境的 EVM 与 Solana 本地开发
-签名器；`examples/signing` 示例）。
+签名器；`examples/signing` 示例），以及账户与资产（§13——
+`capability/account` 与 `capability/asset` 契约：带所有者类别的账户记录、
+由签名器自身 allow-list 回答的 Signer 管理归属、按各资产精度表达的原生与
+Token 余额、资产元数据与链特有信息明细，并接入两个适配器，使每个 EVM 与
+Solana 网络都作为模块能力提供）。
 架构决策汇总在
 [`docs/design/decisions.md`](docs/design/decisions.md)，详细 ADR 在
 [`docs/decisions/`](docs/decisions/)。分期实施见 [`todo.md`](todo.md)——
-下一步：账户与资产 Provider。
+下一步：错误体系与可观测性。
 
 ## 开发
 

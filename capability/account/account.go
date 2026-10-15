@@ -2,6 +2,7 @@ package account
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/cuihairu/chame/capability/signer"
@@ -101,6 +102,12 @@ func (a Account) Validate() error {
 	return nil
 }
 
+// ErrAccountNotFound means the chain reports no account for the address.
+// Chains that have no account-existence concept (EVM: every address is
+// queryable, an absent balance reads zero) never return it; chains that
+// do (Solana: a never-funded address is null) must.
+var ErrAccountNotFound = errors.New("account: the chain reports no account for this address")
+
 // Provider is the account capability (spec §13.1): read-only account
 // queries over one connected network. It reports addresses and balances;
 // it never holds keys, and asking whether an address is signer-managed
@@ -109,7 +116,8 @@ type Provider interface {
 	// Network returns the logical network identity.
 	Network() identifiers.NetworkID
 	// Account queries one address (§13.1: 账户查询), including chain-
-	// specific details.
+	// specific details. It returns ErrAccountNotFound when the chain
+	// reports no account for the address.
 	Account(ctx context.Context, address identifiers.Address) (Account, error)
 	// Balance returns the native-asset balance of one address
 	// (§13.1: 账户余额). Token balances belong to the asset capability

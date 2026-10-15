@@ -519,9 +519,10 @@ func (n *Network) TransactionStatus(ctx context.Context, sig string) (*Confirmat
 func (n *Network) Stats() NetworkStats { return n.stats.snapshot() }
 
 // Capabilities lists the capability families this network instance can
-// serve. Phase 4 is read-only (ADR-0003).
+// serve: the network family plus the read-only account and asset
+// providers. Transaction writing stays out of scope (ADR-0003).
 func (n *Network) Capabilities() []capability.Name {
-	return []capability.Name{capabilityNetwork}
+	return []capability.Name{capabilityNetwork, capability.Account, capability.Asset}
 }
 
 // commit resolves a caller commitment against the network default (spec

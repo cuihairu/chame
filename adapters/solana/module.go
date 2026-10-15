@@ -6,6 +6,8 @@ import (
 	"log/slog"
 	"sync"
 
+	"github.com/cuihairu/chame/capability/account"
+	"github.com/cuihairu/chame/capability/asset"
 	"github.com/cuihairu/chame/core/capability"
 	cherrs "github.com/cuihairu/chame/core/errors"
 	"github.com/cuihairu/chame/core/health"
@@ -31,11 +33,32 @@ func (a *Adapter) Networks() []identifiers.NetworkID {
 	return append([]identifiers.NetworkID(nil), a.order...)
 }
 
+// AccountProvider exposes the account capability for one network
+// (spec §13.1).
+func (a *Adapter) AccountProvider(id identifiers.NetworkID) (account.Provider, bool) {
+	n, ok := a.networks[id]
+	if !ok {
+		return nil, false
+	}
+	return n.AccountProvider(), true
+}
+
+// AssetProvider exposes the asset capability for one network
+// (spec §13.2).
+func (a *Adapter) AssetProvider(id identifiers.NetworkID) (asset.Provider, bool) {
+	n, ok := a.networks[id]
+	if !ok {
+		return nil, false
+	}
+	return n.AssetProvider(), true
+}
+
 // Capabilities lists the capability families the adapter provides.
-// Phase 4 is read-only (ADR-0003): transaction building, signing,
-// submission and finality tracking are absent by design, not broken.
+// Every family here is read-only: account and asset queries are the
+// read side of spec §13, and transaction building, signing, submission
+// and finality tracking are absent by design, not broken (ADR-0003).
 func (a *Adapter) Capabilities() []capability.Name {
-	return []capability.Name{capabilityNetwork}
+	return []capability.Name{capabilityNetwork, capability.Account, capability.Asset}
 }
 
 // Supported reports whether the adapter provides the capability.
@@ -96,13 +119,14 @@ func New(cfg Config, opts ...Option) *Module {
 func (m *Module) Name() string { return "solana" }
 
 // Info declares what the module provides: the network capability family
-// only (ADR-0003).
+// plus the read-only account and asset providers (spec §13).
 func (m *Module) Info() module.Info {
-	return module.Info{Provides: []capability.Name{capabilityNetwork}}
+	return module.Info{Provides: []capability.Name{capabilityNetwork, capability.Account, capability.Asset}}
 }
 
-// Register validates the config, publishes the adapter capability, and
-// registers one health check per network.
+// Register validates the config, publishes the adapter as the network,
+// account and asset capability value, and registers one health check per
+// network.
 func (m *Module) Register(reg module.Registry) error {
 	if err := m.cfg.Validate(); err != nil {
 		return err
@@ -114,7 +138,13 @@ func (m *Module) Register(reg module.Registry) error {
 			return err
 		}
 	}
-	return reg.PutCapability(capabilityNetwork, a)
+	if err := reg.PutCapability(capabilityNetwork, a); err != nil {
+		return err
+	}
+	if err := reg.PutCapability(capability.Account, a); err != nil {
+		return err
+	}
+	return reg.PutCapability(capability.Asset, a)
 }
 
 // Start dials every configured network and verifies cluster identity.
