@@ -3,10 +3,12 @@ package evm
 import (
 	"context"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"math/big"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
@@ -64,6 +66,17 @@ type fakeClient struct {
 	// selectorReply overrides the reply for one four-byte selector, so
 	// tests can answer several functions of one contract at once.
 	selectorReply map[string][]byte
+
+	// estimateGas pins the gas a node estimates for a call, and
+	// estimateCalls captures the queries that asked for it.
+	estimateGas   uint64
+	estimateCalls []ethereum.CallMsg
+	// gasPrice and gasTipCap pin the fee suggestion a node reports.
+	gasPrice *big.Int
+	gasTipCap *big.Int
+	// slowEstimate makes every estimate block for this long, so a test
+	// can watch a deadline expire mid-build.
+	slowEstimate time.Duration
 
 	// Captures.
 	calls    []ethereum.CallMsg
@@ -356,6 +369,91 @@ func (f *fakeClient) capturedSent() []*types.Transaction {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return append([]*types.Transaction(nil), f.sentTxs...)
+}
+
+// withEstimateGas pins the gas a node estimates for a call.
+func (f *fakeClient) withEstimateGas(gas uint64) *fakeClient {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.estimateGas = gas
+	return f
+}
+
+// withGasPrice pins the gas price a node suggests.
+func (f *fakeClient) withGasPrice(price *big.Int) *fakeClient {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.gasPrice = price
+	return f
+}
+
+// withGasTipCap pins the priority fee a node suggests. A node that
+// cannot name one must fail "suggest_gas_tip_cap" instead.
+func (f *fakeClient) withGasTipCap(tip *big.Int) *fakeClient {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.gasTipCap = tip
+	return f
+}
+
+// withSlowEstimate makes every estimate block for this long.
+func (f *fakeClient) withSlowEstimate(d time.Duration) *fakeClient {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.slowEstimate = d
+	return f
+}
+
+func (f *fakeClient) capturedEstimates() []ethereum.CallMsg {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]ethereum.CallMsg(nil), f.estimateCalls...)
+}
+
+// EstimateGas answers the pinned estimate after any configured delay,
+// like a node thinking about a call.
+func (f *fakeClient) EstimateGas(ctx context.Context, msg ethereum.CallMsg) (uint64, error) {
+	if err := f.maybeFail("estimate_gas"); err != nil {
+		return 0, err
+	}
+	f.mu.Lock()
+	f.estimateCalls = append(f.estimateCalls, msg)
+	d, gas := f.slowEstimate, f.estimateGas
+	f.mu.Unlock()
+	if d > 0 {
+		select {
+		case <-time.After(d):
+		case <-ctx.Done():
+			return 0, ctx.Err()
+		}
+	}
+	return gas, nil
+}
+
+func (f *fakeClient) SuggestGasPrice(ctx context.Context) (*big.Int, error) {
+	if err := f.maybeFail("suggest_gas_price"); err != nil {
+		return nil, err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.gasPrice == nil {
+		return nil, errors.New("no gas price pinned")
+	}
+	return new(big.Int).Set(f.gasPrice), nil
+}
+
+// SuggestGasTipCap reports no priority fee on a node that does not run
+// EIP-1559, the way a legacy chain's node answers the request.
+func (f *fakeClient) SuggestGasTipCap(ctx context.Context) (*big.Int, error) {
+	if err := f.maybeFail("suggest_gas_tip_cap"); err != nil {
+		return nil, err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.gasTipCap == nil {
+		return nil, errors.New("maxPriorityFeePerGas is not supported")
+	}
+	return new(big.Int).Set(f.gasTipCap), nil
 }
 
 func (f *fakeClient) Close() {

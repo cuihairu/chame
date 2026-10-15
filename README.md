@@ -6,6 +6,15 @@
 
 > **English** | [中文](README.zh.md)
 
+<p align="center"><img src="assets/logo.svg" alt="Chame logo" width="96" height="96"></p>
+
+<p align="center">
+  <a href="https://github.com/cuihairu/chame/actions"><img src="https://github.com/cuihairu/chame/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-TBD-lightgrey" alt="License"></a>
+  <a href="https://go.dev/"><img src="https://img.shields.io/badge/go-1.24-00ADD8?logo=go&logoColor=white" alt="Go"></a>
+  <img src="https://img.shields.io/badge/status-design-orange" alt="Status">
+</p>
+
 **Chame** is a Go game backend framework that abstracts blockchains behind one
 runtime. A game server talks to a single API; EVM and Solana are adapters
 behind it.
