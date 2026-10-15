@@ -1,5 +1,8 @@
-# Chame
+> [English](README.md) | **中文**
 
+<p align="center"><img src="assets/logo.jpg" alt="Chame logo" width="160" height="160"></p>
+
+<h1 align="center">Chame</h1>
 
 > [English](README.md) | **中文**
 
