@@ -75,7 +75,7 @@ Chame 已不止是“统一接口”的设计稿：EVM 与 Solana 均有读写�
 | 顺序 | 补齐项 | 最小可证伪验收形态 |
 |---:|---|---|
 | 1 | **已完成（本次提交）**：仓储 `Create` 返回原子 `inserted` / `same-key-existing` 结果，Service 据此判定胜者。 | 固定 ID 与随机 ID 两种构造下，16 个并发同键同哈希 Begin 必须恰有 1 个 `CreateInserted`/Created，其余 `CreateSameKeyExisting`/Existing，且全数返回同一持久化记录；异哈希仍必须全部冲突或仅一个哈希成功。 |
-| 2 | 定义游戏链上资产确权与游戏账本边界：资产身份、归属权威来源、finality 前状态、重复事件与补偿规则。 | 给一笔充值/铸造/转移事件做故障注入：重复投递、乱序、回滚各跑一次；玩家可用余额/物品必须与已确认链事实和唯一业务流水一致，断言不存在重复入账。 |
+| 2 | **已完成（设计定稿 + 可验证契约）**：[`docs/design/game-asset-ownership-and-ledger-boundary.md`](../design/game-asset-ownership-and-ledger-boundary.md) 定义规范资产身份、链事实/游戏账本权威边界、finality 前 pending 不可花、事件幂等与 reorg 补偿，并明确不做托管钱包/生产密钥运营；英文版同步。契约代码 [`application/gameledger/contract.go`](../../application/gameledger/contract.go)，沿用 `application/idempotency` 与 `CreateInserted` 原子胜者语义。 | 已有故障断言：`TestDuplicateTransferEventIsAppliedExactlyOnce` 重投只建一条流水；`TestPendingEntryIsVisibleButNotSpendable` pending 可查不可花、确认后可用；`TestReorgCompensatesOnce` reorg 冲销一次；`TestAssetIdentityNormalizationPreservesStandardDifferences` 规范化身份但 ERC-721/ERC-1155/SPL 不合并。**宿主持久化账本、真实充值/铸造/转移端到端回放及乱序故障注入仍待宿主实现/验证**；本契约不是该证据。 |
 | 3 | 明确交易语义及部署写入模型：EVM signer 单实例约束，或设计共享 nonce 协调；Solana 过期恢复沿用不确定态保护。 | 两进程同时对同一 EVM account 发并发写：系统必须拒绝第二写实例或通过共享协调分配不重复 nonce；RPC 在 send 后断连时，同幂等键恢复只能落成同一业务操作。 |
 | 4 | 增加 NFT 资产身份/所有权和跨标准查询层（先选目标链/标准，避免抹平差异）。 | 对 ERC-721、ERC-1155 同一合约不同 tokenId、Solana NFT 与非 NFT SPL mint，返回归属/数量正确；转移与重组后回放结果收敛，未知标准明确拒绝。 |
 | 5 | 建立独立索引/投影适配边界（可接 Goldsky/The Graph/自建 indexer），保留原始链证据与重建能力。 | 从任一保存的 cursor 删除派生读模型并全量回放；输出逐事件 ID、所有权/余额投影哈希与原结果相同；重复、断线、cursor 回退不得漏事件。 |
