@@ -4,6 +4,7 @@ package faultmatrix
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -25,15 +26,20 @@ const (
 	slow        fault = "slow"
 )
 
-func rpcCall(ctx context.Context, url, method string) error {
-	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, url, strings.NewReader(fmt.Sprintf(`{"jsonrpc":"2.0","id":1,"method":%q,"params":[]}`, method)))
+func rpcCall(ctx context.Context, url, method string) (retErr error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, strings.NewReader(fmt.Sprintf(`{"jsonrpc":"2.0","id":1,"method":%q,"params":[]}`, method)))
+	if err != nil {
+		return err
+	}
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
-	_, _ = io.Copy(io.Discard, resp.Body)
+	defer func() { retErr = errors.Join(retErr, resp.Body.Close()) }()
+	if _, err := io.Copy(io.Discard, resp.Body); err != nil {
+		return fmt.Errorf("read RPC response: %w", err)
+	}
 	if resp.StatusCode == 429 || resp.StatusCode >= 500 {
 		return fmt.Errorf("http %d", resp.StatusCode)
 	}

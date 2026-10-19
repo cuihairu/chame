@@ -17,18 +17,30 @@ func Handler(c *memory.Collector) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
 		counters, histograms, gauges := c.Snapshot()
+		// Once a response write fails (for example, a disconnected scraper),
+		// stop writing; another HTTP response cannot repair a partial scrape.
 		for _, s := range counters {
-			fmt.Fprintf(w, "%s%s %s\n", s.Name, labels(s.Labels), number(s.Value))
+			if _, err := fmt.Fprintf(w, "%s%s %s\n", s.Name, labels(s.Labels), number(s.Value)); err != nil {
+				return
+			}
 		}
 		for _, s := range gauges {
-			fmt.Fprintf(w, "%s%s %s\n", s.Name, labels(s.Labels), number(s.Value))
+			if _, err := fmt.Fprintf(w, "%s%s %s\n", s.Name, labels(s.Labels), number(s.Value)); err != nil {
+				return
+			}
 		}
 		for _, s := range histograms {
 			for _, b := range s.Buckets {
-				fmt.Fprintf(w, "%s_bucket%s %d\n", s.Name, labelsWithLE(s.Labels, strconv.FormatFloat(b.UpperBound, 'g', -1, 64)), b.Count)
+				if _, err := fmt.Fprintf(w, "%s_bucket%s %d\n", s.Name, labelsWithLE(s.Labels, strconv.FormatFloat(b.UpperBound, 'g', -1, 64)), b.Count); err != nil {
+					return
+				}
 			}
-			fmt.Fprintf(w, "%s_bucket%s %d\n", s.Name, labelsWithLE(s.Labels, "+Inf"), s.Count)
-			fmt.Fprintf(w, "%s_sum%s %s\n%s_count%s %d\n", s.Name, labels(s.Labels), number(s.Sum), s.Name, labels(s.Labels), s.Count)
+			if _, err := fmt.Fprintf(w, "%s_bucket%s %d\n", s.Name, labelsWithLE(s.Labels, "+Inf"), s.Count); err != nil {
+				return
+			}
+			if _, err := fmt.Fprintf(w, "%s_sum%s %s\n%s_count%s %d\n", s.Name, labels(s.Labels), number(s.Sum), s.Name, labels(s.Labels), s.Count); err != nil {
+				return
+			}
 		}
 	})
 }

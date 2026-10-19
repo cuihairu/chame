@@ -28,8 +28,15 @@ func devSigner(t *testing.T, env string, accounts ...signer.AccountRef) *LocalDe
 	if err != nil {
 		t.Fatalf("signer: %v", err)
 	}
-	t.Cleanup(func() { _ = s.Close() })
+	t.Cleanup(func() { closeDevSigner(t, s) })
 	return s
+}
+
+func closeDevSigner(t *testing.T, s *LocalDevSigner) {
+	t.Helper()
+	if err := s.Close(); err != nil {
+		t.Errorf("close signer: %v", err)
+	}
 }
 
 func devAccountRef(t *testing.T) signer.AccountRef {
@@ -85,7 +92,7 @@ func TestGenerateDevKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("signer: %v", err)
 	}
-	defer s.Close()
+	defer closeDevSigner(t, s)
 	signed, err := s.Sign(context.Background(), signer.Request{
 		Network: ref.Network, Account: addr, Type: signer.SigEVMMessage, Payload: []byte("p"),
 	})
@@ -113,15 +120,27 @@ func TestEVMConcurrentWriterInstancesRejectSharedAccount(t *testing.T) {
 	if err != nil {
 		t.Fatalf("first writer: %v", err)
 	}
-	defer first.Close()
+	defer closeDevSigner(t, first)
 	second, err := NewLocalDevSigner(config.EnvDevelopment, key, ref)
 	if err == nil {
-		second.Close()
+		closeDevSigner(t, second)
 		t.Fatal("second writer unexpectedly acquired shared account")
 	}
 	if !strings.Contains(err.Error(), "already has an active writer") {
 		t.Fatalf("second writer error = %v, want clear active-writer rejection", err)
 	}
+	// A conflict after acquiring another network's lease must release it.
+	multi := ref
+	multi.Network = identifiers.NetworkID{Family: identifiers.FamilyEVM, Name: "base", ChainID: "8453"}
+	partial, err := NewLocalDevSigner(config.EnvDevelopment, key, multi, ref)
+	if err == nil {
+		closeDevSigner(t, partial)
+		t.Fatal("partial writer unexpectedly acquired shared account")
+	}
+	if !strings.Contains(err.Error(), "already has an active writer") {
+		t.Fatalf("partial writer error = %v, want active-writer rejection", err)
+	}
+	devSigner(t, config.EnvDevelopment, multi)
 }
 
 func TestLocalDevSignerRequiresOwnAccount(t *testing.T) {

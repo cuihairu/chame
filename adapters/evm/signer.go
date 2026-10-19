@@ -3,6 +3,7 @@ package evm
 import (
 	"context"
 	"crypto/ecdsa"
+	"errors"
 	"fmt"
 	"math/big"
 	"os"
@@ -92,13 +93,13 @@ func NewLocalDevSigner(env string, key *ecdsa.PrivateKey, accounts ...signer.Acc
 		path := filepath.Join(os.TempDir(), "chame-evm-writer-"+name+".lock")
 		f, e := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0600)
 		if e != nil {
-			s.Close()
-			return nil, fmt.Errorf("evm: open signer lease for %s: %w", ref.Address, e)
+			return nil, errors.Join(fmt.Errorf("evm: open signer lease for %s: %w", ref.Address, e), s.Close())
 		}
 		if e = syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); e != nil {
-			f.Close()
-			s.Close()
-			return nil, fmt.Errorf("evm: signer account %s on %s already has an active writer in this host; shared-account multi-instance writes are unsupported", ref.Address, ref.Network)
+			return nil, errors.Join(
+				fmt.Errorf("evm: signer account %s on %s already has an active writer in this host; shared-account multi-instance writes are unsupported: %w", ref.Address, ref.Network, e),
+				f.Close(), s.Close(),
+			)
 		}
 		s.locks = append(s.locks, f)
 	}
