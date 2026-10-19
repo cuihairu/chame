@@ -77,6 +77,7 @@ func devSignerForOtherAccount(t *testing.T) *LocalDevSigner {
 	if err != nil {
 		t.Fatalf("other signer: %v", err)
 	}
+	t.Cleanup(func() { _ = s.Close() })
 	return s
 }
 

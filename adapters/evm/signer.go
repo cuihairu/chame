@@ -5,7 +5,12 @@ import (
 	"crypto/ecdsa"
 	"fmt"
 	"math/big"
+	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
+	"sync"
+	"syscall"
 
 	cherrs "github.com/cuihairu/chame/core/errors"
 	"github.com/ethereum/go-ethereum/accounts"
@@ -31,6 +36,8 @@ type LocalDevSigner struct {
 	account  identifiers.Address
 	accounts signer.AllowList
 	desc     signer.Descriptor
+	locks    []*os.File
+	closeMu  sync.Mutex
 }
 
 var _ signer.Signer = (*LocalDevSigner)(nil)
@@ -65,7 +72,7 @@ func NewLocalDevSigner(env string, key *ecdsa.PrivateKey, accounts ...signer.Acc
 	if !allowed {
 		return nil, fmt.Errorf("evm: local development signer: allow list must include the key address %s", account)
 	}
-	return &LocalDevSigner{
+	s := &LocalDevSigner{
 		key:      key,
 		account:  account,
 		accounts: list,
@@ -76,7 +83,44 @@ func NewLocalDevSigner(env string, key *ecdsa.PrivateKey, accounts ...signer.Acc
 			AddressSources: []signer.AddressSource{signer.AddressSourceHeldKey},
 			Unsafe:         true,
 		},
-	}, nil
+	}
+	for _, ref := range list {
+		if ref.Network.Family != identifiers.FamilyEVM {
+			continue
+		}
+		name := strings.NewReplacer("/", "_", ":", "_").Replace(ref.Network.String() + "-" + strings.ToLower(ref.Address.Value))
+		path := filepath.Join(os.TempDir(), "chame-evm-writer-"+name+".lock")
+		f, e := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0600)
+		if e != nil {
+			s.Close()
+			return nil, fmt.Errorf("evm: open signer lease for %s: %w", ref.Address, e)
+		}
+		if e = syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); e != nil {
+			f.Close()
+			s.Close()
+			return nil, fmt.Errorf("evm: signer account %s on %s already has an active writer in this host; shared-account multi-instance writes are unsupported", ref.Address, ref.Network)
+		}
+		s.locks = append(s.locks, f)
+	}
+	return s, nil
+}
+
+// Close releases this process's per-account writer leases. Hosts must call
+// it during shutdown; OS process exit also releases the locks.
+func (s *LocalDevSigner) Close() error {
+	s.closeMu.Lock()
+	defer s.closeMu.Unlock()
+	var first error
+	for _, f := range s.locks {
+		if err := syscall.Flock(int(f.Fd()), syscall.LOCK_UN); err != nil && first == nil {
+			first = err
+		}
+		if err := f.Close(); err != nil && first == nil {
+			first = err
+		}
+	}
+	s.locks = nil
+	return first
 }
 
 // DevKeyFromHex decodes a 64-hex-character secp256k1 private key. Tests

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/cuihairu/chame/capability/signer"
@@ -27,6 +28,7 @@ func devSigner(t *testing.T, env string, accounts ...signer.AccountRef) *LocalDe
 	if err != nil {
 		t.Fatalf("signer: %v", err)
 	}
+	t.Cleanup(func() { _ = s.Close() })
 	return s
 }
 
@@ -83,6 +85,7 @@ func TestGenerateDevKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("signer: %v", err)
 	}
+	defer s.Close()
 	signed, err := s.Sign(context.Background(), signer.Request{
 		Network: ref.Network, Account: addr, Type: signer.SigEVMMessage, Payload: []byte("p"),
 	})
@@ -95,6 +98,29 @@ func TestGenerateDevKey(t *testing.T) {
 	}
 	if _, err := DevKeyAddress(nil); err == nil {
 		t.Errorf("nil key accepted")
+	}
+}
+
+// TestEVMConcurrentWriterInstancesRejectSharedAccount proves the local
+// process lease rejects a second live signer for the same network/account.
+func TestEVMConcurrentWriterInstancesRejectSharedAccount(t *testing.T) {
+	key, err := DevKeyFromHex(devKeyHex)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ref := devAccountRef(t)
+	first, err := NewLocalDevSigner(config.EnvDevelopment, key, ref)
+	if err != nil {
+		t.Fatalf("first writer: %v", err)
+	}
+	defer first.Close()
+	second, err := NewLocalDevSigner(config.EnvDevelopment, key, ref)
+	if err == nil {
+		second.Close()
+		t.Fatal("second writer unexpectedly acquired shared account")
+	}
+	if !strings.Contains(err.Error(), "already has an active writer") {
+		t.Fatalf("second writer error = %v, want clear active-writer rejection", err)
 	}
 }
 
