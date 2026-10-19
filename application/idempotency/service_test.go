@@ -3,7 +3,9 @@ package idempotency_test
 import (
 	"context"
 	"errors"
+	"strconv"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -34,17 +36,33 @@ func builder(tx transaction.Transaction) (transaction.Transaction, error) {
 // conflict on the next keyed create, simulating a lost race.
 type countingRepo struct {
 	transaction.Repository
+	mu            sync.Mutex
 	creates       int
 	conflictArmed bool
 }
 
 func (r *countingRepo) Create(ctx context.Context, tx transaction.Transaction) error {
+	r.mu.Lock()
 	r.creates++
 	if r.conflictArmed && tx.IdempotencyKey != "" {
 		r.conflictArmed = false
+		r.mu.Unlock()
 		return transaction.IdempotencyConflict(tx.IdempotencyScope, tx.IdempotencyKey)
 	}
+	r.mu.Unlock()
 	return r.Repository.Create(ctx, tx)
+}
+
+func (r *countingRepo) armConflict() {
+	r.mu.Lock()
+	r.conflictArmed = true
+	r.mu.Unlock()
+}
+
+func (r *countingRepo) createCount() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.creates
 }
 
 func newService(t *testing.T, at time.Time) (*idempotency.Service, *countingRepo) {
@@ -75,8 +93,8 @@ func TestBeginCreatesOnMiss(t *testing.T) {
 	if tx.Network.Family != identifiers.FamilyEVM || tx.OperationID != "op-1" {
 		t.Fatalf("builder fields missing: %+v", tx)
 	}
-	if repo.creates != 1 {
-		t.Fatalf("want one create, got %d", repo.creates)
+	if got := repo.createCount(); got != 1 {
+		t.Fatalf("want one create, got %d", got)
 	}
 }
 
@@ -100,8 +118,8 @@ func TestBeginReusesSameRequest(t *testing.T) {
 	if replay.ID != first.ID {
 		t.Fatalf("replay must return the first operation: %s vs %s", replay.ID, first.ID)
 	}
-	if repo.creates != 1 {
-		t.Fatalf("replay must not create, got %d creates", repo.creates)
+	if got := repo.createCount(); got != 1 {
+		t.Fatalf("replay must not create, got %d creates", got)
 	}
 }
 
@@ -183,7 +201,7 @@ func TestBeginResolvesLostRace(t *testing.T) {
 	}
 	// Now simulate the interleaving: find misses, then the create hits a
 	// conflict because another caller won the key in between.
-	repo.conflictArmed = true
+	repo.armConflict()
 	got, outcome, err := svc.Begin(ctx, testScope, "key-1", "hash-1", builder)
 	if err != nil {
 		t.Fatalf("raced begin: %v", err)
@@ -206,7 +224,7 @@ func TestBeginSurfacesConflictAfterLostRaceWithDifferentRequest(t *testing.T) {
 	}
 	// The store reports a conflict (find missed) but the stored request
 	// differs: the resolution must surface the conflict, not reuse.
-	repo.conflictArmed = true
+	repo.armConflict()
 	_, _, err := svc.Begin(ctx, testScope, "key-1", "hash-DIFFERENT", builder)
 	if !errors.Is(err, cherrs.ErrIdempotencyConflict) {
 		t.Fatalf("want ErrIdempotencyConflict, got %v", err)
@@ -215,7 +233,14 @@ func TestBeginSurfacesConflictAfterLostRaceWithDifferentRequest(t *testing.T) {
 
 func TestBeginConcurrentReplaysConvergeOnOneOperation(t *testing.T) {
 	at := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
-	svc, _ := newService(t, at)
+	_, repo := newService(t, at)
+	var nextID atomic.Uint64
+	svc := idempotency.New(repo,
+		idempotency.WithClock(fixedClock(at)),
+		idempotency.WithNewID(func() transaction.TransactionID {
+			return transaction.TransactionID("tx-" + strconv.FormatUint(nextID.Add(1), 10))
+		}),
+	)
 	ctx := context.Background()
 
 	const n = 16
