@@ -110,6 +110,9 @@ type Repository interface {
 	Create(ctx context.Context, ev Event) error
 	// Get returns the event with the given identity, or ErrEventNotFound.
 	Get(ctx context.Context, id EventID) (Event, error)
+	// ReplayEvents returns retained raw evidence for one source through the
+	// saved cursor, in deterministic chain order. It never filters by delivery state.
+	ReplayEvents(ctx context.Context, key CursorKey, through Cursor) ([]Event, error)
 	// FindPending returns ready events oldest-chain-position-first (§11.4):
 	// queued, still observed on the canonical chain, finality at or above
 	// MinFinality, attempt due, bounded by Limit.

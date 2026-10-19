@@ -26,9 +26,17 @@
 
 ## 范围与明确不做
 
-本仓当前仍是 native/ERC-20/SPL fungible 查询面；本设计不声称已经提供链上 NFT 所有权索引，也不新增生产游戏账本、玩家/钱包绑定、市场、掉落、客服对账或争议工作流。参考包是最小可验证契约，不是持久化实现；宿主须实现事务性唯一约束、重放/重建、授权和业务补偿。**不实现托管钱包，不运营生产密钥**，生产 HSM/KMS、轮换、审批与资金控制由宿主另行负责，范围依据分析缺失项第 5 条 [`chain-game-foundation-2026-10-19.md:57`](../analysis/chain-game-foundation-2026-10-19.md#L57)。
+本仓当前仍是 native/ERC-20/SPL fungible 查询面；本设计不声称已经提供链上 NFT 所有权索引，也不新增生产游戏账本、玩家/钱包绑定、市场、掉落、客服对账或争议工作流。账本参考包是最小可验证契约，不是持久化实现；宿主须实现事务性唯一约束、授权和业务补偿。通用派生投影的重建契约见下节。**不实现托管钱包，不运营生产密钥**，生产 HSM/KMS、轮换、审批与资金控制由宿主另行负责，范围依据分析缺失项第 5 条 [`chain-game-foundation-2026-10-19.md:57`](../analysis/chain-game-foundation-2026-10-19.md#L57)。
 
 任何数据外发、分析导出或云备份默认关闭；宿主显式启用前不得将玩家、钱包或账本数据发送至外部服务。
+
+## 独立索引与可重建投影
+
+事件 dispatcher 继续负责 RPC 轮询、finality/reorg 门控，并通过 `event.Repository.Create` 先保存原始事件证据，再推进链源 cursor。投影位于其下游，不重复轮询或修改账本：`application/projection.Replayer` 读取持久化 cursor 和 `ReplayEvents`，将 canonical raw events 输入可插拔 `Backend`，生成可丢弃的派生读模型。`ReplayEvents` 保留原始 payload 和事件记录，包含已投递记录；reorg 标记的记录仍可审计但不会计入 canonical 投影。
+
+重建步骤：读取 `(network, source)` 已保存 cursor；仅清空 projection backend；按链高度、事件 index、ID 的稳定顺序读取该 cursor 之前的 raw evidence；重新应用非 reorged 事件。游标由既有事件仓储保存，投影存储不持有链消费位置，也不重写 raw events。重建须比较前后确定性快照；重放失败时保留 raw evidence，可再次清空派生状态重试。fake A（键值聚合）与 fake B（追加后聚合）验证适配器替换后的投影语义一致。
+
+外部接入点是 `projection.Backend`：宿主可实现 Goldsky、The Graph 或自建 indexer 的查询/写入桥接，将规范化事件交给同一投影逻辑，或将投影结果写入其读模型。它们是可选外部方案，本仓不绑定服务、不新增 SDK/依赖；数据外发与云备份默认关闭。当前实现是内存 fake 验证适配契约，不构成真实服务集成或全链历史回填服务。
 
 ## 可证伪验收
 

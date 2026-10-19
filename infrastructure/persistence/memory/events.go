@@ -62,6 +62,33 @@ func (s *EventStore) Get(_ context.Context, id event.EventID) (event.Event, erro
 	return ev, nil
 }
 
+// ReplayEvents implements event.Repository and returns immutable raw event
+// evidence through the caller's saved source cursor, regardless of delivery state.
+func (s *EventStore) ReplayEvents(_ context.Context, key event.CursorKey, through event.Cursor) ([]event.Event, error) {
+	if err := key.Validate(); err != nil {
+		return nil, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]event.Event, 0)
+	for _, ev := range s.events {
+		if ev.Network != key.Network || ev.SourceType != key.SourceType || ev.BlockHeight > through.BlockHeight {
+			continue
+		}
+		out = append(out, ev)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].BlockHeight != out[j].BlockHeight {
+			return out[i].BlockHeight < out[j].BlockHeight
+		}
+		if out[i].Index != out[j].Index {
+			return out[i].Index < out[j].Index
+		}
+		return out[i].ID < out[j].ID
+	})
+	return out, nil
+}
+
 // FindPending implements event.Repository: ready events in chain order
 // (block height, then in-transaction index), deterministically tie-broken
 // by observation time and identity.

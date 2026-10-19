@@ -70,6 +70,33 @@ func (s *EventStore) Get(ctx context.Context, id event.EventID) (event.Event, er
 	return scanEvent(row, string(id))
 }
 
+// ReplayEvents returns retained raw evidence through a saved cursor, including
+// delivered/reorged rows; projection policy decides which observations apply.
+func (s *EventStore) ReplayEvents(ctx context.Context, key event.CursorKey, through event.Cursor) ([]event.Event, error) {
+	if err := key.Validate(); err != nil {
+		return nil, err
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT `+eventColumns+` FROM chame_events
+WHERE network_family=$1 AND network_name=$2 AND network_chain_id=$3 AND source_type=$4 AND block_height <= $5
+ORDER BY block_height ASC, event_index ASC, id ASC`, key.Network.Family, key.Network.Name, key.Network.ChainID, key.SourceType, through.BlockHeight)
+	if err != nil {
+		return nil, cherrs.New(cherrs.PersistenceFailure, "event.sql.replay", "%v", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []event.Event
+	for rows.Next() {
+		ev, err := scanEvent(rows, "")
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, ev)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, cherrs.New(cherrs.PersistenceFailure, "event.sql.replay", "%v", err)
+	}
+	return out, nil
+}
+
 // FindPending implements event.Repository: ready events in chain order,
 // scoped per source when asked (§11.4).
 func (s *EventStore) FindPending(ctx context.Context, q event.PendingQuery) ([]event.Event, error) {
