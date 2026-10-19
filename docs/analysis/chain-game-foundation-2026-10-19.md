@@ -52,7 +52,7 @@ Chame 已不止是“统一接口”的设计稿：EVM 与 Solana 均有读写�
 
 1. **把余额查询或链事件当游戏资产账本。** `AssetProvider` 只给链上余额，且 SPL token holder 是 token account；它不锁定游戏内兑换、转赠或奖励的并发业务约束，直接据此增发/消费会留双花窗口。[`capability/asset/asset.go:65`](../../capability/asset/asset.go#L65)
 2. **把 EVM 单实例 nonce coordinator 当多副本安全。** 协调状态在进程内存，多进程共享签名账户明确不受支持；部署多个写实例会有 nonce 冲突/外部 writer 干扰风险。[`adapters/evm/nonce.go:68`](../../adapters/evm/nonce.go#L68)、[`docs/decisions/0004-evm-nonce-scope.md:11`](../decisions/0004-evm-nonce-scope.md#L11)
-3. **把当前幂等并发实现当作已验收。** `make ci` 的测试阶段失败，独立 `-count=10` 也稳定重现 5 次失败；测试使用固定 ID，服务层在 Create 后通过 ID 对比判断是否由本调用创建，store 的同键同哈希 no-op 无法提供胜者标记。这个失败在修复和重复验收前是交易底座阻断项。[`application/idempotency/service.go:126`](../../application/idempotency/service.go#L126)、[`application/idempotency/service.go:138`](../../application/idempotency/service.go#L138)、[`infrastructure/persistence/memory/memory.go:54`](../../infrastructure/persistence/memory/memory.go#L54)、[`application/idempotency/service_test.go:216`](../../application/idempotency/service_test.go#L216)
+3. **幂等并发胜者语义曾缺少验收。** 历史修复 `d1f1260` 已修好测试夹具的线程安全与唯一 ID，故此前“`make ci` 测试失败、`-count=10` 重现 5 次”的结论已过时，不代表当前状态。产品侧曾仍依赖 ID 对比猜测胜者；本次改为仓储原子返回 inserted / same-key-existing，并补齐固定 ID、随机 ID 并发验收；通过结果见本清单提交记录。[`application/idempotency/service.go`](../../application/idempotency/service.go)、[`capability/transaction/repository.go`](../../capability/transaction/repository.go)、[`infrastructure/persistence/memory/memory.go`](../../infrastructure/persistence/memory/memory.go)、[`infrastructure/persistence/sql/store.go`](../../infrastructure/persistence/sql/store.go)
 4. **把业务回滚视为链数据库事务回滚。** `Flow` 明示数据库提交与链提交不原子；发奖、道具发放等需等待业务采用的 finality，再设计补偿与争议处理。[`application/transaction/flow.go:32`](../../application/transaction/flow.go#L32)、[`docs/decisions/0006-finality-policy.md:13`](../decisions/0006-finality-policy.md#L13)
 5. **把本地开发 signer、远程签名接口或链 SDK 接入等同于完整密钥运营。** 仓库定义权限及调用边界，但不提供生产 HSM/KMS 策略证明、密钥轮换演练或资金操作审批闭环；密钥不得落盘在游戏业务数据、日志或分析材料中。[`capability/signer/signer.go:86`](../../capability/signer/signer.go#L86)、[`infrastructure/signer/remote/remote.go:12`](../../infrastructure/signer/remote/remote.go#L12)
 
@@ -74,7 +74,7 @@ Chame 已不止是“统一接口”的设计稿：EVM 与 Solana 均有读写�
 
 | 顺序 | 补齐项 | 最小可证伪验收形态 |
 |---:|---|---|
-| 1 | 修复并验收幂等并发胜者判定；`Create` 需可区分 inserted / same-key-existing 或提供等价原子结果。 | 固定 ID 与随机 ID 两种构造下，16 个并发同键同哈希 Begin 必须恰有 1 个 Created、其余 Existing，且全数返回同一持久化记录；异哈希必须全部冲突或仅一个哈希成功。 |
+| 1 | **已完成（本次提交）**：仓储 `Create` 返回原子 `inserted` / `same-key-existing` 结果，Service 据此判定胜者。 | 固定 ID 与随机 ID 两种构造下，16 个并发同键同哈希 Begin 必须恰有 1 个 `CreateInserted`/Created，其余 `CreateSameKeyExisting`/Existing，且全数返回同一持久化记录；异哈希仍必须全部冲突或仅一个哈希成功。 |
 | 2 | 定义游戏链上资产确权与游戏账本边界：资产身份、归属权威来源、finality 前状态、重复事件与补偿规则。 | 给一笔充值/铸造/转移事件做故障注入：重复投递、乱序、回滚各跑一次；玩家可用余额/物品必须与已确认链事实和唯一业务流水一致，断言不存在重复入账。 |
 | 3 | 明确交易语义及部署写入模型：EVM signer 单实例约束，或设计共享 nonce 协调；Solana 过期恢复沿用不确定态保护。 | 两进程同时对同一 EVM account 发并发写：系统必须拒绝第二写实例或通过共享协调分配不重复 nonce；RPC 在 send 后断连时，同幂等键恢复只能落成同一业务操作。 |
 | 4 | 增加 NFT 资产身份/所有权和跨标准查询层（先选目标链/标准，避免抹平差异）。 | 对 ERC-721、ERC-1155 同一合约不同 tokenId、Solana NFT 与非 NFT SPL mint，返回归属/数量正确；转移与重组后回放结果收敛，未知标准明确拒绝。 |

@@ -125,17 +125,17 @@ func (s *Store) applyMigration(ctx context.Context, m migration) error {
 }
 
 // Create implements transaction.Repository. The insert targets the
-// idempotency index: a duplicate key with the same request hash is a
-// no-op (the first operation stands, §10.1), a duplicate with a
-// different hash conflicts. A keyless duplicate id is a persistence
-// failure.
-func (s *Store) Create(ctx context.Context, tx transaction.Transaction) error {
+// idempotency index: a duplicate key with the same request hash reports
+// CreateSameKeyExisting (the first operation stands, §10.1), a duplicate
+// with a different hash conflicts. A keyless duplicate id is a
+// persistence failure.
+func (s *Store) Create(ctx context.Context, tx transaction.Transaction) (transaction.CreateResult, error) {
 	if err := transaction.ValidateRecord(tx); err != nil {
-		return err
+		return 0, err
 	}
 	data, err := encodeChainData(tx.ChainData)
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	const keyed = `INSERT INTO chame_transactions (` + txColumns + `)
@@ -160,27 +160,27 @@ RETURNING id`
 	if err := s.db.QueryRowContext(ctx, query, args...).Scan(&returned); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			if tx.IdempotencyKey == "" {
-				return cherrs.New(cherrs.PersistenceFailure, "transaction.sql.create",
+				return 0, cherrs.New(cherrs.PersistenceFailure, "transaction.sql.create",
 					"transaction %s already exists", tx.ID)
 			}
 			return s.resolveKeyedCreate(ctx, tx)
 		}
-		return cherrs.New(cherrs.PersistenceFailure, "transaction.sql.create", "%v", err)
+		return 0, cherrs.New(cherrs.PersistenceFailure, "transaction.sql.create", "%v", err)
 	}
-	return nil
+	return transaction.CreateInserted, nil
 }
 
 // resolveKeyedCreate handles the lost insert race: re-read the record
 // holding the key and apply the §10.1 request-hash rule.
-func (s *Store) resolveKeyedCreate(ctx context.Context, tx transaction.Transaction) error {
+func (s *Store) resolveKeyedCreate(ctx context.Context, tx transaction.Transaction) (transaction.CreateResult, error) {
 	existing, err := s.FindByIdempotencyKey(ctx, tx.IdempotencyScope, tx.IdempotencyKey)
 	if err != nil {
-		return cherrs.New(cherrs.PersistenceFailure, "transaction.sql.create", "%v", err)
+		return 0, cherrs.New(cherrs.PersistenceFailure, "transaction.sql.create", "%v", err)
 	}
 	if existing.RequestHash != tx.RequestHash {
-		return transaction.IdempotencyConflict(tx.IdempotencyScope, tx.IdempotencyKey)
+		return 0, transaction.IdempotencyConflict(tx.IdempotencyScope, tx.IdempotencyKey)
 	}
-	return nil // same request: the stored record is the operation
+	return transaction.CreateSameKeyExisting, nil
 }
 
 // Get implements transaction.Repository.

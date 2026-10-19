@@ -42,12 +42,12 @@ func keyID(scope transaction.IdempotencyScope, key string) string {
 }
 
 // Create implements transaction.Repository. Same key and same request
-// hash returns nil and keeps the first record (§10.1: a retried request
-// never creates a second operation, even under a race); same key with a
-// different hash conflicts.
-func (s *Store) Create(_ context.Context, tx transaction.Transaction) error {
+// hash reports CreateSameKeyExisting and keeps the first record (§10.1:
+// a retried request never creates a second operation, even under a race);
+// same key with a different hash conflicts.
+func (s *Store) Create(_ context.Context, tx transaction.Transaction) (transaction.CreateResult, error) {
 	if err := transaction.ValidateRecord(tx); err != nil {
-		return err
+		return 0, err
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -55,19 +55,19 @@ func (s *Store) Create(_ context.Context, tx transaction.Transaction) error {
 		k := keyID(tx.IdempotencyScope, tx.IdempotencyKey)
 		if existing, ok := s.records[s.keys[k]]; ok {
 			if existing.RequestHash != tx.RequestHash {
-				return conflict(tx.IdempotencyScope, tx.IdempotencyKey)
+				return 0, conflict(tx.IdempotencyScope, tx.IdempotencyKey)
 			}
-			return nil // same request: the stored record is the operation
+			return transaction.CreateSameKeyExisting, nil
 		}
 	} else if _, ok := s.records[tx.ID]; ok {
-		return cherrs.New(cherrs.PersistenceFailure, "transaction.repository",
+		return 0, cherrs.New(cherrs.PersistenceFailure, "transaction.repository",
 			"transaction %s already exists", tx.ID)
 	}
 	s.records[tx.ID] = tx
 	if tx.IdempotencyKey != "" {
 		s.keys[keyID(tx.IdempotencyScope, tx.IdempotencyKey)] = tx.ID
 	}
-	return nil
+	return transaction.CreateInserted, nil
 }
 
 // Get implements transaction.Repository.

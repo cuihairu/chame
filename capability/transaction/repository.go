@@ -133,10 +133,11 @@ func (l Lease) Validate() error {
 // zero CreatedAt or UpdatedAt: staleness scanning depends on real
 // timestamps.
 type Repository interface {
-	// Create inserts a record. With an idempotency key it applies the
-	// uniqueness rules above; without one it inserts plainly. A duplicate
-	// ID without a key is a persistence failure.
-	Create(ctx context.Context, tx Transaction) error
+	// Create inserts a record and atomically reports whether this call
+	// inserted it or found the same keyed request already stored. With an
+	// idempotency key it applies the uniqueness rules above; without one it
+	// inserts plainly. A duplicate ID without a key is a persistence failure.
+	Create(ctx context.Context, tx Transaction) (CreateResult, error)
 	// Get returns the record with the given ID, or ErrRecordNotFound.
 	Get(ctx context.Context, id TransactionID) (Transaction, error)
 	// FindByIdempotencyKey returns the record holding the key within the
@@ -174,6 +175,18 @@ type Repository interface {
 	// with ErrRecordNotFound.
 	Release(ctx context.Context, id TransactionID, holder string) error
 }
+
+// CreateResult reports whether this call inserted the transaction or found
+// an existing transaction with the same idempotency key and request hash.
+type CreateResult uint8
+
+const (
+	// CreateInserted means this call inserted the record.
+	CreateInserted CreateResult = iota + 1
+	// CreateSameKeyExisting means a record with the same key and request
+	// hash already existed; that stored record remains authoritative.
+	CreateSameKeyExisting
+)
 
 // IdempotencyConflict returns the canonical error for a key reuse with a
 // different request (§10.1). Implementations return it so callers match

@@ -123,7 +123,8 @@ func (s *Service) Begin(ctx context.Context, scope transaction.IdempotencyScope,
 		return transaction.Transaction{}, "", cherrs.New(cherrs.InvalidArgument, "idempotency.begin",
 			"builder must keep the seeded identity and idempotency fields")
 	}
-	if err := s.repo.Create(ctx, built); err != nil {
+	created, err := s.repo.Create(ctx, built)
+	if err != nil {
 		if !errors.Is(err, cherrs.ErrIdempotencyConflict) {
 			return transaction.Transaction{}, "", err
 		}
@@ -135,11 +136,16 @@ func (s *Service) Begin(ctx context.Context, scope transaction.IdempotencyScope,
 		}
 		return s.resolve(existing, requestHash)
 	}
-	// Same-key same-hash creates are no-ops on the store: a racing twin
-	// may have won. Report the stored operation, not the local copy, so
-	// the caller drives the record that actually exists.
-	if stored, ferr := s.repo.FindByIdempotencyKey(ctx, scope, key); ferr == nil && stored.ID != built.ID {
-		return stored, OutcomeExisting, nil
+	if created == transaction.CreateSameKeyExisting {
+		stored, ferr := s.repo.FindByIdempotencyKey(ctx, scope, key)
+		if ferr != nil {
+			return transaction.Transaction{}, "", ferr
+		}
+		return s.resolve(stored, requestHash)
+	}
+	if created != transaction.CreateInserted {
+		return transaction.Transaction{}, "", cherrs.New(cherrs.InternalError, "idempotency.begin",
+			"repository returned unknown create result %d", created)
 	}
 	return built, OutcomeCreated, nil
 }

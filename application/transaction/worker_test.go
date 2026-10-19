@@ -111,7 +111,7 @@ func (s *suite) seed(t *testing.T, id string, st transaction.TransactionStatus, 
 		CreatedAt:   at,
 		UpdatedAt:   at,
 	}
-	if err := s.repo.Create(context.Background(), tx); err != nil {
+	if _, err := s.repo.Create(context.Background(), tx); err != nil {
 		t.Fatalf("seed %s: %v", id, err)
 	}
 	return tx

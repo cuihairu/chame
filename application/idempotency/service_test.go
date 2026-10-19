@@ -41,13 +41,13 @@ type countingRepo struct {
 	conflictArmed bool
 }
 
-func (r *countingRepo) Create(ctx context.Context, tx transaction.Transaction) error {
+func (r *countingRepo) Create(ctx context.Context, tx transaction.Transaction) (transaction.CreateResult, error) {
 	r.mu.Lock()
 	r.creates++
 	if r.conflictArmed && tx.IdempotencyKey != "" {
 		r.conflictArmed = false
 		r.mu.Unlock()
-		return transaction.IdempotencyConflict(tx.IdempotencyScope, tx.IdempotencyKey)
+		return 0, transaction.IdempotencyConflict(tx.IdempotencyScope, tx.IdempotencyKey)
 	}
 	r.mu.Unlock()
 	return r.Repository.Create(ctx, tx)
@@ -233,43 +233,59 @@ func TestBeginSurfacesConflictAfterLostRaceWithDifferentRequest(t *testing.T) {
 
 func TestBeginConcurrentReplaysConvergeOnOneOperation(t *testing.T) {
 	at := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
-	_, repo := newService(t, at)
-	var nextID atomic.Uint64
-	svc := idempotency.New(repo,
-		idempotency.WithClock(fixedClock(at)),
-		idempotency.WithNewID(func() transaction.TransactionID {
-			return transaction.TransactionID("tx-" + strconv.FormatUint(nextID.Add(1), 10))
-		}),
-	)
-	ctx := context.Background()
-
-	const n = 16
-	results := make([]transaction.Transaction, n)
-	outcomes := make([]idempotency.Outcome, n)
-	errs := make([]error, n)
-	var wg sync.WaitGroup
-	for i := 0; i < n; i++ {
-		wg.Add(1)
-		go func(i int) {
-			defer wg.Done()
-			results[i], outcomes[i], errs[i] = svc.Begin(ctx, testScope, "key-1", "hash-1", builder)
-		}(i)
+	tests := []struct {
+		name  string
+		fixed bool
+	}{
+		{name: "fixed ID", fixed: true},
+		{name: "random ID"},
 	}
-	wg.Wait()
-
-	created := 0
-	for i := range n {
-		if errs[i] != nil {
-			t.Fatalf("begin %d: %v", i, errs[i])
-		}
-		if results[i].ID != results[0].ID {
-			t.Fatalf("begin %d resolved to %s, first resolved to %s", i, results[i].ID, results[0].ID)
-		}
-		if outcomes[i] == idempotency.OutcomeCreated {
-			created++
-		}
-	}
-	if created != 1 {
-		t.Fatalf("want exactly one created outcome, got %d", created)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, repo := newService(t, at)
+			var nextID atomic.Uint64
+			newID := func() transaction.TransactionID {
+				return transaction.TransactionID("tx-" + strconv.FormatUint(nextID.Add(1), 10))
+			}
+			if tt.fixed {
+				newID = func() transaction.TransactionID {
+					return "tx-fixed"
+				}
+			}
+			svc := idempotency.New(repo, idempotency.WithClock(fixedClock(at)), idempotency.WithNewID(newID))
+			const n = 16
+			results := make([]transaction.Transaction, n)
+			outcomes := make([]idempotency.Outcome, n)
+			errs := make([]error, n)
+			start := make(chan struct{})
+			var wg sync.WaitGroup
+			for i := 0; i < n; i++ {
+				wg.Add(1)
+				go func(i int) {
+					defer wg.Done()
+					<-start
+					results[i], outcomes[i], errs[i] = svc.Begin(context.Background(), testScope, "key-1", "hash-1", builder)
+				}(i)
+			}
+			close(start)
+			wg.Wait()
+			created := 0
+			for i := range n {
+				if errs[i] != nil {
+					t.Fatalf("begin %d: %v", i, errs[i])
+				}
+				if outcomes[i] == idempotency.OutcomeCreated {
+					created++
+				} else if outcomes[i] != idempotency.OutcomeExisting {
+					t.Fatalf("begin %d outcome = %q", i, outcomes[i])
+				}
+				if results[i].ID != results[0].ID {
+					t.Fatalf("begin %d resolved to %s, first resolved to %s", i, results[i].ID, results[0].ID)
+				}
+			}
+			if created != 1 {
+				t.Fatalf("want exactly one created outcome, got %d", created)
+			}
+		})
 	}
 }

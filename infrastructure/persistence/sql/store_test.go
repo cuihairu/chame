@@ -129,7 +129,7 @@ func TestStoreRoundTripsAFullRecord(t *testing.T) {
 		CreatedAt:   at,
 		UpdatedAt:   at.Add(time.Second),
 	}
-	if err := store.Create(ctx, tx); err != nil {
+	if _, err := store.Create(ctx, tx); err != nil {
 		t.Fatalf("create: %v", err)
 	}
 	got, err := store.Get(ctx, "tx-roundtrip")
@@ -192,7 +192,7 @@ func TestStoreRejectsNonEncodableChainData(t *testing.T) {
 		CreatedAt: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
 		UpdatedAt: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
 	}
-	err = store.Create(ctx, tx)
+	_, err = store.Create(ctx, tx)
 	if !errors.Is(err, cherrs.ErrPersistenceFailure) {
 		t.Fatalf("want ErrPersistenceFailure, got %v", err)
 	}
@@ -221,10 +221,10 @@ func TestStoreRejectsADuplicateKeylessId(t *testing.T) {
 			UpdatedAt: at,
 		}
 	}
-	if err := store.Create(ctx, mk()); err != nil {
+	if _, err := store.Create(ctx, mk()); err != nil {
 		t.Fatalf("first create: %v", err)
 	}
-	if err := store.Create(ctx, mk()); !errors.Is(err, cherrs.ErrPersistenceFailure) {
+	if _, err := store.Create(ctx, mk()); !errors.Is(err, cherrs.ErrPersistenceFailure) {
 		t.Fatalf("want ErrPersistenceFailure for a duplicate keyless id, got %v", err)
 	}
 }

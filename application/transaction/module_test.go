@@ -88,7 +88,7 @@ func TestModuleRecoversStuckRecordsUnderTheRuntime(t *testing.T) {
 		LeaseTTL:     time.Second,
 		TaskTimeout:  time.Second,
 	}))
-	if err := repo.Create(context.Background(), stuckRecord("tx-module", "0xabc", txmodel.TxUnknown)); err != nil {
+	if _, err := repo.Create(context.Background(), stuckRecord("tx-module", "0xabc", txmodel.TxUnknown)); err != nil {
 		t.Fatalf("create: %v", err)
 	}
 
@@ -140,7 +140,7 @@ func TestModulePublishesTheFlowWhenATransactorIsWired(t *testing.T) {
 func TestModuleReconcilesOneManually(t *testing.T) {
 	q := &fakeQuery{status: txmodel.TxConfirmed}
 	m, repo := testModule(t, q)
-	if err := repo.Create(context.Background(), stuckRecord("tx-manual", "0xbb", txmodel.TxUnknown)); err != nil {
+	if _, err := repo.Create(context.Background(), stuckRecord("tx-manual", "0xbb", txmodel.TxUnknown)); err != nil {
 		t.Fatalf("create: %v", err)
 	}
 

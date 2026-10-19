@@ -118,7 +118,7 @@ func (f *Flow) Begin(ctx context.Context, scope txmodel.IdempotencyScope, key st
 		return txmodel.Transaction{}, err
 	}
 	if key == "" {
-		if err := f.repo.Create(ctx, seed); err != nil {
+		if _, err := f.repo.Create(ctx, seed); err != nil {
 			return txmodel.Transaction{}, err
 		}
 		return seed, nil
@@ -136,7 +136,7 @@ func (f *Flow) Begin(ctx context.Context, scope txmodel.IdempotencyScope, key st
 	if !errors.Is(err, txmodel.ErrRecordNotFound) {
 		return txmodel.Transaction{}, err
 	}
-	if err := f.repo.Create(ctx, seed); err != nil {
+	if _, err := f.repo.Create(ctx, seed); err != nil {
 		return txmodel.Transaction{}, err
 	}
 	// The store keeps the first record for one key: re-read so two
