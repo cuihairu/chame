@@ -79,11 +79,83 @@ Chame 已不止是“统一接口”的设计稿：EVM 与 Solana 均有读写�
 | 3 | **已完成（单实例决策 + 运行时防护 + 部署文档）**：选择 EVM signer 单实例约束；本机重复 signer 实例经 OS 文件锁明确拒绝，跨主机由宿主编排保证每账户单 writer；Solana 过期恢复保留 unknown/uncertain 保护。见 [`docs/deployment-write-model.md`](../deployment-write-model.md)。 | `TestEVMConcurrentWriterInstancesRejectSharedAccount` 断言第二实例明确失败；`TestStatusOfReportsUnknownAfterExpiry` 断言过期未观测状态为 unknown；`TestExpiryUncertainWithoutHistorySearch` 断言未做全历史搜索时为 uncertain。Send 后断连恢复仍由既有交易状态/幂等恢复路径覆盖，不代表可任意重放。 |
 | 4 | **已完成（最小只读查询）**：目标为 EVM ERC-721/ERC-1155 + Solana Metaplex NFT；查询复用第 2 条 `AssetIdentity`，类型保留标准差异，结果显式标为未满足游戏 finality，入账继续走现有 finality/reorg 规则。fake RPC 验收，不代表真实节点验证。 | `TestNFT721SameContractDifferentTokenIDsAreDistinct` 保留同合约 tokenId 区分；`TestNFT1155QuantityIsPreserved` 保留 raw quantity；`TestSolanaMetaplexNFTIsDistinctFromFungibleSPL` 检验 canonical metadata PDA 分类与标准错配拒绝；`TestNFTQueryRPCErrorAndUnfinalizedObservation`、`TestSolanaNFTQueryPropagatesRPCFailure` 检验 RPC 错误传播及未最终性标注。完整转移历史数据与生产回填仍未提供；第 5 条已提供重建适配边界。 |
 | 5 | **已完成（可重建读模型边界 + fake 后端契约）**：[`application/projection/projection.go`](../../application/projection/projection.go) 独立于 RPC dispatcher；事件仓储提供 `ReplayEvents`，raw payload 留存，派生 backend 可替换。外部 Goldsky/The Graph/自建 indexer 仅为可选接入方案，未绑定服务。 | `TestRebuildMatchesDeletedProjection` 从保存 cursor 删除派生读模型后重建快照一致；`TestRebuildPreservesRawEvidence` 断言 raw ID/payload 保留；`TestIndexerBackendSwapPreservesProjectionSemantics` 比较 fake A/B 投影。真实索引服务接入、全历史回填及生产级断线/reorg 压测仍未完成。 |
-| 6 | 完成真实 RPC/测试网故障验证与容量门槛，覆盖 EVM 和 Solana 的适配/恢复矩阵。 | 用可重启节点或测试网跑固定场景，注入超时、限流、节点身份不符、EVM reorg、Solana blockhash 过期；记录请求/状态转移证据，任何模糊结果不得变成确定失败或成功。 |
+| 6 | **部分完成（本地传输层故障矩阵；真实节点/链语义仍待验证）**：新增 `tests/faultmatrix` 本地 HTTP JSON-RPC 故障 harness，覆盖 EVM 与 Solana 形状的余额读取、fake-signer 提交 RPC、事件轮询 RPC，以及超时、429、5xx、连接中断、慢响应；注入 503 后再次请求验证续跑。 | **实测边界**：36 场景/故障组合全通过；恢复用例 503→重试成功。该 harness 的响应是合成的，写入只发 JSON-RPC 请求且不签名/不广播交易，不能证明适配器状态机、节点重启、EVM reorg 或 Solana blockhash 过期语义。Foundry 镜像获取受阻，真实节点矩阵全部待节点。容量仅测本机 `httptest` HTTP transport，不作为链节点吞吐门槛。完整矩阵与实测格见下文。 |
 | 7 | 提供生产可观测导出、告警和成本归集接口。 | 接入导出器后，单笔交易从业务幂等键（仅内部关联，不作为高基数标签）可在日志中追踪；错误率、unknown 堆积、事件延迟、gas 使用/费用产生告警；测试标签不会出现玩家/交易 ID。 |
 | 8 | 由实际发行/运营地区与产品形态评估合规和资金控制，并在宿主系统实现所需审批、限额与审计。 | 以产品适用的内部控制规则构造禁用账户、超限请求、审批缺失和审计抽查案例；请求须被拒绝且保留可审计记录。此项不是法律意见。 |
 
 **推荐次序（已代决）**：1 → 2 → 3 → 4 → 5 → 6 → 7 → 8。先解除幂等并发阻断，再确定账本/finality 和签名写入并发边界，才扩确权和读模型；真实节点验证在索引边界落定后做；运营可观测和依地区适用的资金控制最后闭环。第 4 条 fake RPC 证据不替代第 6 条真实节点/测试网验证；第 5 条 fake backend 证据不代表真实索引服务已接入。若首个目标游戏明确不含 NFT 或受监管资金流，相应项目可不进入该产品部署，但框架能力缺口仍在。
+
+### 第 6 条执行记录（2026-10-19）
+
+**节点取得尝试**：在仓库初始干净、HEAD 与 `origin/main` 同为 `97328b3a94c4c1d614f843d6c2341e1a0918df2e` 后，仅尝试一次：`timeout 45s docker pull ghcr.io/foundry-rs/foundry:latest`。Docker 输出（本次命令输出原文）：
+
+```text
+latest: Pulling from foundry-rs/foundry
+de47083ed7d7: Pulling fs layer
+191bdd6639b5: Pulling fs layer
+5ae30d21561f: Pulling fs layer
+2aff5e9d87ca: Pulling fs layer
+2bb8f16d567c: Download complete
+191bdd6639b5: Download complete
+6001fa6e0ea6: Download complete
+de47083ed7d7: Pull complete
+2aff5e9d87ca: Download complete
+5ae30d21561f: Download complete
+```
+
+45 秒窗口内没有得到可用镜像；随后 `docker image inspect ghcr.io/foundry-rs/foundry:latest --format '{{.Id}}'` 返回 `Error response from daemon: No such image: ghcr.io/foundry-rs/foundry:latest`。结论：**环境受阻·待节点**。没有访问公网测试网，也未使用真实密钥。
+
+**本地传输层矩阵**：命令 `go test ./tests/faultmatrix -v`。全部 36 个组合的“实测”均为 `httptest` 合成 JSON-RPC 响应；慢响应为 20 ms 且在 30 ms context deadline 内。超时响应延迟 60 ms；连接中断由关闭 hijacked HTTP 连接注入。预期中的“请求成功/传输错误”均由 harness 实测；它不调用 EVM/Solana Adapter 的账户/交易/eventSource 入口，因此“适配器/节点实测”均未测。
+
+| 固定场景 | 故障 | 预期 | 实测 |
+|---|---|---|---|
+| EVM 余额读取 `eth_getBalance` | 无故障 | RPC 请求成功 | harness 成功；适配器/节点未测·环境受阻，待节点 |
+| EVM 余额读取 `eth_getBalance` | 超时 | 请求截止并报传输错误，不伪报余额 | harness 失败如预期；适配器恢复策略未测·待节点 |
+| EVM 余额读取 `eth_getBalance` | HTTP 429 | 报限流错误，不伪报余额 | harness 收到 429；适配器分类已有单测 `TestClassifyMapsTaxonomy` 覆盖；节点未测·待节点 |
+| EVM 余额读取 `eth_getBalance` | HTTP 5xx | 报服务/网络错误，不伪报余额 | harness 收到 503；适配器分类已有单测覆盖；节点未测·待节点 |
+| EVM 余额读取 `eth_getBalance` | 连接中断 | 报连接错误，重连后可续跑 | harness 收到连接错误；重连未测·待节点 |
+| EVM 余额读取 `eth_getBalance` | 慢响应 | deadline 内成功；超 deadline 则超时 | harness 20 ms 内成功；边界压力未测·待节点 |
+| EVM fake-signer 提交 `eth_sendRawTransaction` | 无故障 | 固定 RPC 请求成功 | harness 成功；未签名/未广播·适配器/节点未测 |
+| EVM fake-signer 提交 `eth_sendRawTransaction` | 超时 | 保留提交结果未知，不推断成功或失败 | harness 传输错误；状态机语义未测·待节点 |
+| EVM fake-signer 提交 `eth_sendRawTransaction` | HTTP 429 | 明确限流，不确认交易成功 | harness 收到 429；分类单测覆盖；节点未测·待节点 |
+| EVM fake-signer 提交 `eth_sendRawTransaction` | HTTP 5xx | 保留不确定，不确认交易成功 | harness 收到 503；节点/恢复未测·待节点 |
+| EVM fake-signer 提交 `eth_sendRawTransaction` | 连接中断 | 结果按未知处理，恢复后查状态而非盲目重放 | harness 连接错误；交易状态恢复未测·待节点 |
+| EVM fake-signer 提交 `eth_sendRawTransaction` | 慢响应 | deadline 内成功；超时结果保持未知 | harness 20 ms 内成功；交易确认语义未测·待节点 |
+| EVM 事件轮询 `eth_getLogs` | 无故障 | RPC 请求成功 | harness 成功；游标/日志解码未测·待节点 |
+| EVM 事件轮询 `eth_getLogs` | 超时 | 不推进游标，重试可续跑 | harness 传输错误；适配器游标语义未测·待节点 |
+| EVM 事件轮询 `eth_getLogs` | HTTP 429 | 限流错误，不推进游标 | harness 收到 429；节点未测·待节点 |
+| EVM 事件轮询 `eth_getLogs` | HTTP 5xx | 网络错误，不推进游标 | harness 收到 503；节点未测·待节点 |
+| EVM 事件轮询 `eth_getLogs` | 连接中断 | 错误后重连续跑，避免静默跳游标 | harness 连接错误；重连未测·待节点 |
+| EVM 事件轮询 `eth_getLogs` | 慢响应 | deadline 内成功；超时则不推进游标 | harness 20 ms 内成功；节点未测·待节点 |
+| Solana 余额读取 `getBalance` | 无故障 | RPC 请求成功 | harness 成功；适配器/节点未测·环境受阻，待节点 |
+| Solana 余额读取 `getBalance` | 超时 | 请求截止并报传输错误，不伪报余额 | harness 失败如预期；节点未测·待节点 |
+| Solana 余额读取 `getBalance` | HTTP 429 | 报限流错误，不伪报余额 | harness 收到 429；分类已有 `TestClassifyHTTPStatus` 覆盖；节点未测·待节点 |
+| Solana 余额读取 `getBalance` | HTTP 5xx | 报服务/网络错误，不伪报余额 | harness 收到 503；分类已有单测覆盖；节点未测·待节点 |
+| Solana 余额读取 `getBalance` | 连接中断 | 报连接错误，恢复后重试 | harness 收到连接错误；重连未测·待节点 |
+| Solana 余额读取 `getBalance` | 慢响应 | deadline 内成功；超 deadline 则超时 | harness 20 ms 内成功；节点未测·待节点 |
+| Solana fake-signer 提交 `sendTransaction` | 无故障 | RPC 请求成功 | harness 成功；未签名/未广播·适配器/节点未测 |
+| Solana fake-signer 提交 `sendTransaction` | 超时 | 保留提交结果未知，不推断成功或失败 | harness 传输错误；状态语义未测·待节点 |
+| Solana fake-signer 提交 `sendTransaction` | HTTP 429 | 明确限流，不确认交易成功 | harness 收到 429；分类单测覆盖；节点未测·待节点 |
+| Solana fake-signer 提交 `sendTransaction` | HTTP 5xx | 保留不确定，不确认交易成功 | harness 收到 503；节点/恢复未测·待节点 |
+| Solana fake-signer 提交 `sendTransaction` | 连接中断 | 结果未知，恢复后查签名状态而非盲目重放 | harness 连接错误；状态恢复未测·待节点 |
+| Solana fake-signer 提交 `sendTransaction` | 慢响应 | deadline 内成功；超时结果保持未知 | harness 20 ms 内成功；交易确认语义未测·待节点 |
+| Solana 事件轮询 `getSignaturesForAddress` | 无故障 | RPC 请求成功 | harness 成功；游标/签名解码未测·待节点 |
+| Solana 事件轮询 `getSignaturesForAddress` | 超时 | 不推进游标，重试可续跑 | harness 传输错误；游标语义未测·待节点 |
+| Solana 事件轮询 `getSignaturesForAddress` | HTTP 429 | 限流错误，不推进游标 | harness 收到 429；节点未测·待节点 |
+| Solana 事件轮询 `getSignaturesForAddress` | HTTP 5xx | 网络错误，不推进游标 | harness 收到 503；节点未测·待节点 |
+| Solana 事件轮询 `getSignaturesForAddress` | 连接中断 | 错误后重连续跑，避免静默跳游标 | harness 连接错误；重连未测·待节点 |
+| Solana 事件轮询 `getSignaturesForAddress` | 慢响应 | deadline 内成功；超时则不推进游标 | harness 20 ms 内成功；节点未测·待节点 |
+
+| 故障恢复项 | 预期 | 实测 |
+|---|---|---|
+| 端点中断/重启后恢复 | 失败请求后重连，重新读取同一固定场景 | `TestRestartRecovery`：首请求注入 503，第二次请求成功，`recovery calls=2`；仅本地合成 HTTP 服务，不是节点进程重启 |
+| 节点身份不符 | 启动校验拒绝错误身份，不能当作暂时 outage | 未测·真实 EVM chain ID / Solana genesis hash 节点尚未取得 |
+| EVM reorg | 重组后事件/交易状态不被误判为最终 | 未测·需要可控 EVM 链和真实区块/日志状态 |
+| Solana blockhash 过期 | 过期后保留不确定状态并正确恢复 | 未测·需要真实 validator、区块推进与过期交易 |
+
+**容量实测**：命令 `go test ./tests/faultmatrix -run '^$' -bench BenchmarkConcurrentQueries -benchtime=2s -count=1` 输出 `BenchmarkConcurrentQueries-14 22614 109535 ns/op 32113 B/op 112 allocs/op`，即本机 HTTP transport 基线约 `1/0.000109535 = 9,129` 请求/秒（并发 `RunParallel`，i9-10880H）。此数只代表本地合成 HTTP JSON-RPC handler，不含 go-ethereum/Solana SDK 解码、适配器重试/池化、节点、磁盘或生产网络；EVM/Solana 节点吞吐、端到端轮询吞吐及交易吞吐均**未测**。
+
+**§4-6 状态同步**：由原“完成真实 RPC/测试网故障验证与容量门槛”更新为**部分完成**。补齐本地 transport 故障 harness、36 格结果矩阵、503 后恢复用例与本机 transport 容量参考；真实节点/测试网缺席，故真实适配器矩阵、节点身份校验、节点进程重启、EVM reorg、Solana blockhash 过期和链节点容量门槛仍未完成。恢复这些验收需要可重启 Anvil/geth 与 solana-test-validator，或风险可控的专用测试网端点；不需要真实资金密钥。
 
 ## 5. 英文结论 / English conclusion
 
