@@ -1,15 +1,70 @@
 package evm
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
 	"errors"
+	"github.com/ethereum/go-ethereum/common"
 	"math/big"
 	"testing"
 
+	"github.com/cuihairu/chame/application/gameledger"
 	cherrs "github.com/cuihairu/chame/core/errors"
 	"github.com/cuihairu/chame/core/identifiers"
 )
+
+func TestNFT721SameContractDifferentTokenIDsAreDistinct(t *testing.T) {
+	f := newFakeClient(1)
+	f.selectorReply = map[string][]byte{"6352211e": append(make([]byte, 12), common.HexToAddress("0x0000000000000000000000000000000000000011").Bytes()...)}
+	p := testNetwork(t, f).AssetProvider()
+	base := gameledger.AssetIdentity{Network: p.Network(), Standard: gameledger.StandardERC721, Contract: erc20Addr, TokenID: "1"}
+	a, err := p.ERC721Owner(context.Background(), base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	base.TokenID = "2"
+	b, err := p.ERC721Owner(context.Background(), base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a.Owner.Value != "0x0000000000000000000000000000000000000011" || b.Owner.Value != a.Owner.Value || a.FinalitySatisfied || len(f.calls) != 2 || !bytes.Equal(f.calls[0].Data[4:], word32(1)) || !bytes.Equal(f.calls[1].Data[4:], word32(2)) {
+		t.Fatalf("token identities not preserved: %+v %+v calls=%d", a, b, len(f.calls))
+	}
+}
+
+func TestNFTQueryRPCErrorAndUnfinalizedObservation(t *testing.T) {
+	f := newFakeClient(1)
+	f.fail("call_contract", errors.New("offline"))
+	p := testNetwork(t, f).AssetProvider()
+	id := gameledger.AssetIdentity{Network: p.Network(), Standard: gameledger.StandardERC721, Contract: erc20Addr, TokenID: "9"}
+	if _, err := p.ERC721Owner(context.Background(), id); err == nil {
+		t.Fatal("RPC error was hidden")
+	}
+	f2 := newFakeClient(1)
+	f2.selectorReply = map[string][]byte{"6352211e": append(make([]byte, 12), common.HexToAddress("0x0000000000000000000000000000000000000011").Bytes()...)}
+	got, err := testNetwork(t, f2).AssetProvider().ERC721Owner(context.Background(), id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.FinalitySatisfied {
+		t.Fatal("latest eth_call must remain an unfinalized observation")
+	}
+}
+
+func TestNFT1155QuantityIsPreserved(t *testing.T) {
+	f := newFakeClient(1)
+	f.selectorReply = map[string][]byte{"00fdd58e": word32(17)}
+	p := testNetwork(t, f).AssetProvider()
+	id := gameledger.AssetIdentity{Network: p.Network(), Standard: gameledger.StandardERC1155, Contract: erc20Addr, TokenID: "7"}
+	got, err := p.ERC1155Balance(context.Background(), id, evmAddr(t, "0x0000000000000000000000000000000000000022"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.RawQuantity.Cmp(big.NewInt(17)) != 0 {
+		t.Fatalf("quantity=%s want 17", got.RawQuantity)
+	}
+}
 
 const (
 	erc20Addr = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"

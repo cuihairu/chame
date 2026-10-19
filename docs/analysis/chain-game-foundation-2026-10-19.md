@@ -11,14 +11,14 @@ Chame 已不止是“统一接口”的设计稿：EVM 与 Solana 均有读写�
 
 ## 1. 链游底座能力矩阵
 
-每行是一个验收格，共 9 格。分类统计按格计：**有代码证据 7，纯文档能力/约束 1，未开始 1**。有代码证据格中仍可能包含明确限制；“代码证据”不表示生产级完成。
+每行是一个验收格，共 9 格。分类统计按格计：**有代码证据 8，纯文档能力/约束 1，未开始 0**。有代码证据格中仍可能包含明确限制；“代码证据”不表示生产级完成。
 
 | 能力 | 现状与证据（file:line） | 判定 |
 |---|---|---|
 | 链抽象、多链适配及扩链成本 | 核心交易模型不依赖 SDK，EVM 与 Solana 各自实现适配器；接口面已实际跨两种不同执行/账户模型，但新增链仍需实现网络身份、账户/资产、签名、交易格式、回执、事件源和 conformance fixture，不能仅加 RPC URL。[`capability/transaction/transaction.go:126`](../../capability/transaction/transaction.go#L126)、[`adapters/evm/module.go:99`](../../adapters/evm/module.go#L99)、[`adapters/solana/module.go:130`](../../adapters/solana/module.go#L130)、[`tests/conformance/adapter/adapter.go:1`](../../tests/conformance/adapter/adapter.go#L1) | 有代码证据；扩链成本中高，抽象保留链差异是优点，适配器职责面较宽是成本。 |
 | 交易生命周期 | EVM 与 Solana 都接入 Prepare/Authorize/Dispatch/Settle，应用层逐阶段持久化，unknown 可恢复；EVM nonce 协调器是进程内状态，不支持多实例共用同一账户并发写入。另有幂等并发验收当前失败：`TestBeginConcurrentReplaysConvergeOnOneOperation` 复跑 10 次中 5 次失败，需先修验收/实现再依赖该语义。[`application/transaction/flow.go:15`](../../application/transaction/flow.go#L15)、[`adapters/evm/flow.go:178`](../../adapters/evm/flow.go#L178)、[`adapters/solana/flow.go:54`](../../adapters/solana/flow.go#L54)、[`adapters/evm/nonce.go:68`](../../adapters/evm/nonce.go#L68)、[`application/idempotency/service.go:126`](../../application/idempotency/service.go#L126)、[`application/idempotency/service_test.go:216`](../../application/idempotency/service_test.go#L216) | 有代码证据但存在验收失败；部署限制明确。失败重试以语义错误分类和恢复扫描为主，不等于任意业务交易可安全自动重放。 |
-| 资产与确权 | 代码提供原生资产、EVM ERC-20 与 Solana SPL Token 的 metadata/balance 查询；SPL holder 明确是 token account，框架不由钱包推导 ATA。Provider 未见 NFT token-id 所有权/转移统一查询或游戏物品账本；资产余额查询不构成游戏侧防双花账本。[`capability/asset/asset.go:65`](../../capability/asset/asset.go#L65)、[`adapters/evm/asset.go:77`](../../adapters/evm/asset.go#L77)、[`adapters/solana/asset.go:74`](../../adapters/solana/asset.go#L74) | 有代码证据（限 fungible/native 查询）；NFT 确权和游戏账本缺口见“缺失且危险”。 |
-| NFT 确权（独立检查格） | 通用 Asset Provider 只有资产 metadata 与余额方法，没有 token-id、NFT owner/数量、transfer 历史查询契约；暂不能据 Chame 统一查询 ERC-721/1155 或 Solana NFT 所有权。[`capability/asset/asset.go:65`](../../capability/asset/asset.go#L65)、[`adapters/evm/asset.go:77`](../../adapters/evm/asset.go#L77) | 未开始（该通用能力面）。 |
+| 资产与确权 | 代码提供原生资产、EVM ERC-20 与 Solana SPL Token 的 metadata/balance 查询；SPL holder 明确是 token account，框架不由钱包推导 ATA。新增独立 NFT 查询 capability，未提供转移历史索引或游戏物品账本；资产观察不构成游戏侧防双花账本。[`capability/asset/asset.go:65`](../../capability/asset/asset.go#L65)、[`adapters/evm/asset.go:77`](../../adapters/evm/asset.go#L77)、[`adapters/solana/asset.go:74`](../../adapters/solana/asset.go#L74)、[`capability/nft/nft.go:1`](../../capability/nft/nft.go#L1) | 有代码证据（查询面）；历史索引和游戏账本仍缺。 |
+| NFT 确权（独立检查格） | 新增标准保留差异的只读查询契约：EVM `ownerOf` / `balanceOf` 返回各自 owner / raw quantity；Solana 通过 Metaplex metadata PDA 识别 NFT，并查询钱包 token accounts。共用第 2 条规范化身份；latest/配置 commitment 的查询仍只是链观察，游戏入账继续经过 finality/reorg 规则。测试仅 fake RPC，未验证真实节点。[`capability/nft/nft.go:1`](../../capability/nft/nft.go#L1)、[`adapters/evm/asset.go:20`](../../adapters/evm/asset.go#L20)、[`adapters/solana/asset.go:20`](../../adapters/solana/asset.go#L20) | 有代码证据（最小只读查询）；未提供完整 Solana 索引/转移历史。 |
 | 链与游戏逻辑一致性 | 交易 unknown/reorged 状态、恢复 Worker、事件 finality gate 和 reorg invalidation 可支撑最终性后发奖等模式；但链数据库与游戏数据库没有跨系统原子事务，游戏业务补偿、先玩后链的回滚/争议流程须由宿主游戏定义。[`capability/transaction/transaction.go:59`](../../capability/transaction/transaction.go#L59)、[`application/transaction/worker.go:22`](../../application/transaction/worker.go#L22)、[`application/eventing/dispatcher.go:221`](../../application/eventing/dispatcher.go#L221)、[`application/transaction/flow.go:32`](../../application/transaction/flow.go#L32) | 有代码证据；框架给出可靠状态钩子，不替游戏决定经济语义。 |
 | 索引与事件 | 两链提供轮询事件源与 `Poll/Head/Observe`，存储 cursor，dispatcher 至少一次投递并做 finality/reorg 门控；幂等投递依赖事件仓储/handler 契约。它不是全链历史索引服务，也没有可直接查询游戏态的 query/index API。[`capability/event/source.go:21`](../../capability/event/source.go#L21)、[`adapters/evm/eventsource.go:62`](../../adapters/evm/eventsource.go#L62)、[`adapters/solana/eventsource.go:80`](../../adapters/solana/eventsource.go#L80)、[`application/eventing/dispatcher.go:131`](../../application/eventing/dispatcher.go#L131) | 有代码证据；具备应用事件消费底座，不是托管索引器。 |
 | 安全 | 有精确网络/账户 allow-list、签名请求审计摘要、远程 signer adapter；本地开发 signer 声明 Unsafe 并限制环境。生产密钥托管、HSM/KMS/多签策略、远程服务供应链和授权运行制度是宿主边界，不由仓库替代。[`capability/signer/allowlist.go:41`](../../capability/signer/allowlist.go#L41)、[`capability/signer/audit.go:13`](../../capability/signer/audit.go#L13)、[`infrastructure/signer/remote/remote.go:1`](../../infrastructure/signer/remote/remote.go#L1)、[`capability/signer/signer.go:74`](../../capability/signer/signer.go#L74) | 有代码证据；签名权限边界有实现，密钥基础设施与部署安全需外接。 |
@@ -27,9 +27,9 @@ Chame 已不止是“统一接口”的设计稿：EVM 与 Solana 均有读写�
 
 ### 格子计数核对
 
-- 有代码证据：7 格。例：`adapters/evm/flow.go:178`、`application/eventing/dispatcher.go:221`；另有 `capability/signer/allowlist.go:65`、`adapters/solana/asset.go:74`。
+- 有代码证据：8 格。例：`adapters/evm/flow.go:178`、`application/eventing/dispatcher.go:221`；另有 `capability/signer/allowlist.go:65`、`adapters/solana/asset.go:74`、`capability/nft/nft.go:1`。
 - 仅文档/边界说明：1 格。例：`docs/design/chame-spec.md:22`、`docs/design/chame-spec.md:40`。
-- 未开始：1 格。例：NFT 统一所有权查询在 `capability/asset/asset.go:65` 的 Provider 契约中没有 token-id/owner 方法；EVM 资产 API 目前是通用 token/fungible 面 `adapters/evm/asset.go:77`，未见 NFT owner 实现。
+- 未开始：0 格。NFT 通用查询契约已增加；完整历史索引与真实节点验证仍属于后续第 5、6 条，不计为本矩阵独立验收格。
 
 ## 2. 能 / 不能直接当底座的判断
 
@@ -42,7 +42,7 @@ Chame 已不止是“统一接口”的设计稿：EVM 与 Solana 均有读写�
 
 ### 需要补齐（5 条）
 
-1. **NFT 与游戏资产账本。** 当前是 native/ERC-20/SPL fungible 查询面；补 NFT token-id 所有权/元数据查询，覆盖 ERC-721/1155 与 Solana NFT 常见账户模型，并提供游戏侧投影接口。[`capability/asset/asset.go:65`](../../capability/asset/asset.go#L65)
+1. **NFT 转移索引与游戏资产账本。** 第 4 条已补 NFT 当前所有权/数量查询，但仍无全历史 token-id 转移索引、可重建投影或生产游戏账本；宿主需对最终性事件幂等入账。[`capability/nft/nft.go:1`](../../capability/nft/nft.go#L1)、[`capability/asset/asset.go:65`](../../capability/asset/asset.go#L65)
 2. **规模化索引。** 当前基于 RPC 轮询的事件消费不是历史索引、复杂查询、回填/重建服务；生产游戏通常需要独立索引投影及读模型。[`capability/event/source.go:21`](../../capability/event/source.go#L21)、[`adapters/evm/eventsource.go:84`](../../adapters/evm/eventsource.go#L84)
 3. **生产可观测链路。** 接官方 exporter、交易/事件 dashboard、费用与延迟指标、队列积压和失败告警；目前 exporter 延后，内存 collector 不做生产持久导出。[`docs/decisions/0007-observability.md:13`](../decisions/0007-observability.md#L13)
 4. **真实节点和故障条件验证。** README 与 TODO 表明适配器验收以 fake RPC 为主；需纳入本地节点/测试网矩阵，覆盖限流、RPC 不一致、重组、服务端重启、交易重复提交与费用尖峰。[`README.zh.md:38`](../../README.zh.md#L38)、[`todo.md:1`](../../todo.md#L1)
@@ -77,13 +77,13 @@ Chame 已不止是“统一接口”的设计稿：EVM 与 Solana 均有读写�
 | 1 | **已完成（本次提交）**：仓储 `Create` 返回原子 `inserted` / `same-key-existing` 结果，Service 据此判定胜者。 | 固定 ID 与随机 ID 两种构造下，16 个并发同键同哈希 Begin 必须恰有 1 个 `CreateInserted`/Created，其余 `CreateSameKeyExisting`/Existing，且全数返回同一持久化记录；异哈希仍必须全部冲突或仅一个哈希成功。 |
 | 2 | **已完成（设计定稿 + 可验证契约）**：[`docs/design/game-asset-ownership-and-ledger-boundary.md`](../design/game-asset-ownership-and-ledger-boundary.md) 定义规范资产身份、链事实/游戏账本权威边界、finality 前 pending 不可花、事件幂等与 reorg 补偿，并明确不做托管钱包/生产密钥运营；英文版同步。契约代码 [`application/gameledger/contract.go`](../../application/gameledger/contract.go)，沿用 `application/idempotency` 与 `CreateInserted` 原子胜者语义。 | 已有故障断言：`TestDuplicateTransferEventIsAppliedExactlyOnce` 重投只建一条流水；`TestPendingEntryIsVisibleButNotSpendable` pending 可查不可花、确认后可用；`TestReorgCompensatesOnce` reorg 冲销一次；`TestAssetIdentityNormalizationPreservesStandardDifferences` 规范化身份但 ERC-721/ERC-1155/SPL 不合并。**宿主持久化账本、真实充值/铸造/转移端到端回放及乱序故障注入仍待宿主实现/验证**；本契约不是该证据。 |
 | 3 | **已完成（单实例决策 + 运行时防护 + 部署文档）**：选择 EVM signer 单实例约束；本机重复 signer 实例经 OS 文件锁明确拒绝，跨主机由宿主编排保证每账户单 writer；Solana 过期恢复保留 unknown/uncertain 保护。见 [`docs/deployment-write-model.md`](../deployment-write-model.md)。 | `TestEVMConcurrentWriterInstancesRejectSharedAccount` 断言第二实例明确失败；`TestStatusOfReportsUnknownAfterExpiry` 断言过期未观测状态为 unknown；`TestExpiryUncertainWithoutHistorySearch` 断言未做全历史搜索时为 uncertain。Send 后断连恢复仍由既有交易状态/幂等恢复路径覆盖，不代表可任意重放。 |
-| 4 | 增加 NFT 资产身份/所有权和跨标准查询层（先选目标链/标准，避免抹平差异）。 | 对 ERC-721、ERC-1155 同一合约不同 tokenId、Solana NFT 与非 NFT SPL mint，返回归属/数量正确；转移与重组后回放结果收敛，未知标准明确拒绝。 |
+| 4 | **已完成（最小只读查询）**：目标为 EVM ERC-721/ERC-1155 + Solana Metaplex NFT；查询复用第 2 条 `AssetIdentity`，类型保留标准差异，结果显式标为未满足游戏 finality，入账继续走现有 finality/reorg 规则。fake RPC 验收，不代表真实节点验证。 | `TestNFT721SameContractDifferentTokenIDsAreDistinct` 保留同合约 tokenId 区分；`TestNFT1155QuantityIsPreserved` 保留 raw quantity；`TestSolanaMetaplexNFTIsDistinctFromFungibleSPL` 检验 canonical metadata PDA 分类与标准错配拒绝；`TestNFTQueryRPCErrorAndUnfinalizedObservation`、`TestSolanaNFTQueryPropagatesRPCFailure` 检验 RPC 错误传播及未最终性标注。完整转移历史/reorg 回放仍待第 5 条索引层。 |
 | 5 | 建立独立索引/投影适配边界（可接 Goldsky/The Graph/自建 indexer），保留原始链证据与重建能力。 | 从任一保存的 cursor 删除派生读模型并全量回放；输出逐事件 ID、所有权/余额投影哈希与原结果相同；重复、断线、cursor 回退不得漏事件。 |
 | 6 | 完成真实 RPC/测试网故障验证与容量门槛，覆盖 EVM 和 Solana 的适配/恢复矩阵。 | 用可重启节点或测试网跑固定场景，注入超时、限流、节点身份不符、EVM reorg、Solana blockhash 过期；记录请求/状态转移证据，任何模糊结果不得变成确定失败或成功。 |
 | 7 | 提供生产可观测导出、告警和成本归集接口。 | 接入导出器后，单笔交易从业务幂等键（仅内部关联，不作为高基数标签）可在日志中追踪；错误率、unknown 堆积、事件延迟、gas 使用/费用产生告警；测试标签不会出现玩家/交易 ID。 |
 | 8 | 由实际发行/运营地区与产品形态评估合规和资金控制，并在宿主系统实现所需审批、限额与审计。 | 以产品适用的内部控制规则构造禁用账户、超限请求、审批缺失和审计抽查案例；请求须被拒绝且保留可审计记录。此项不是法律意见。 |
 
-**推荐次序（已代决）**：1 → 2 → 3 → 4 → 5 → 6 → 7 → 8。先解除幂等并发阻断，再确定账本/finality 和签名写入并发边界，才扩确权和读模型；真实节点验证在索引边界落定后做；运营可观测和依地区适用的资金控制最后闭环。若首个目标游戏明确不含 NFT 或受监管资金流，相应项目可不进入该产品部署，但框架能力缺口仍在。
+**推荐次序（已代决）**：1 → 2 → 3 → 4 → 5 → 6 → 7 → 8。先解除幂等并发阻断，再确定账本/finality 和签名写入并发边界，才扩确权和读模型；真实节点验证在索引边界落定后做；运营可观测和依地区适用的资金控制最后闭环。第 4 条已交付最小只读查询，fake RPC 证据不替代第 6 条真实节点/测试网验证。若首个目标游戏明确不含 NFT 或受监管资金流，相应项目可不进入该产品部署，但框架能力缺口仍在。
 
 ## 5. 英文结论 / English conclusion
 

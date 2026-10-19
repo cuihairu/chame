@@ -1,14 +1,80 @@
 package solana
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
 	"strconv"
 
+	"github.com/gagliardetto/solana-go"
+
+	"github.com/cuihairu/chame/application/gameledger"
 	"github.com/cuihairu/chame/capability/asset"
+	"github.com/cuihairu/chame/capability/nft"
 	cherrs "github.com/cuihairu/chame/core/errors"
 	"github.com/cuihairu/chame/core/identifiers"
 )
+
+var _ nft.SolanaProvider = (*AssetProvider)(nil)
+
+const metaplexMetadataProgram = "metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s"
+
+// SolanaHolding recognizes Metaplex NFT metadata by its canonical metadata
+// PDA and checks the wallet's SPL token accounts. RPC observations use this
+// network's configured commitment; this is not a game-ledger finality gate.
+func (p *AssetProvider) SolanaHolding(ctx context.Context, id gameledger.AssetIdentity, owner identifiers.Address) (nft.SolanaOwnership, error) {
+	id, err := id.Normalize()
+	if err != nil {
+		return nft.SolanaOwnership{}, err
+	}
+	if id.Network != p.net.id || (id.Standard != gameledger.StandardSPLNFT && id.Standard != gameledger.StandardSPL) {
+		return nft.SolanaOwnership{}, cherrs.New(cherrs.InvalidArgument, p.net.opBase+".nft_holding", "identity must be SPL on this cluster")
+	}
+	mint, err := solana.PublicKeyFromBase58(id.Contract)
+	if err != nil {
+		return nft.SolanaOwnership{}, err
+	}
+	program := solana.MustPublicKeyFromBase58(metaplexMetadataProgram)
+	metadata, _, err := solana.FindProgramAddress([][]byte{[]byte("metadata"), program[:], mint[:]}, program)
+	if err != nil {
+		return nft.SolanaOwnership{}, err
+	}
+	metaAddr, _ := identifiers.NewSolanaAddress(metadata.String())
+	meta, err := p.net.Account(ctx, metaAddr, "")
+	if err != nil {
+		return nft.SolanaOwnership{}, err
+	}
+	isNFT := meta != nil && meta.Owner == metaplexMetadataProgram && len(meta.Data) >= 65 && bytes.Equal(meta.Data[33:65], mint[:])
+	if id.Standard == gameledger.StandardSPLNFT && !isNFT {
+		return nft.SolanaOwnership{}, cherrs.New(cherrs.InvalidArgument, p.net.opBase+".nft_holding", "mint has no canonical Metaplex metadata account")
+	}
+	if id.Standard == gameledger.StandardSPL && isNFT {
+		return nft.SolanaOwnership{}, cherrs.New(cherrs.InvalidArgument, p.net.opBase+".nft_holding", "Metaplex NFT must use spl-nft identity")
+	}
+	mintAddr := idAddress(id.Contract)
+	accounts, err := p.net.TokenAccounts(ctx, owner, &mintAddr, "")
+	if err != nil {
+		return nft.SolanaOwnership{}, err
+	}
+	result := nft.SolanaOwnership{Owner: owner, Held: false, Classification: nft.SolanaFungibleSPL, FinalitySatisfied: false}
+	if isNFT {
+		result.Classification = nft.SolanaMetaplexNFT
+	}
+	for _, account := range accounts {
+		bal, e := p.net.TokenBalance(ctx, account.Address, "")
+		if e != nil {
+			return nft.SolanaOwnership{}, e
+		}
+		if bal != nil && bal.RawAmount != "0" {
+			result.Held = true
+			result.TokenAccount = account.Address
+			break
+		}
+	}
+	return result, nil
+}
+
+func idAddress(s string) identifiers.Address { a, _ := identifiers.NewSolanaAddress(s); return a }
 
 // The SPL Token Mint layout (spl_token::Mint) is fixed at 82 bytes:
 // mint_authority COption at 0, supply at 36, decimals at 44,

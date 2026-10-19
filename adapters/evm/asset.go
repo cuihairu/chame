@@ -2,13 +2,89 @@ package evm
 
 import (
 	"context"
+	"math/big"
 
+	"github.com/ethereum/go-ethereum"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 
+	"github.com/cuihairu/chame/application/gameledger"
 	"github.com/cuihairu/chame/capability/asset"
+	"github.com/cuihairu/chame/capability/nft"
 	cherrs "github.com/cuihairu/chame/core/errors"
 	"github.com/cuihairu/chame/core/identifiers"
 )
+
+var _ nft.EVMProvider = (*AssetProvider)(nil)
+
+// ERC721Owner performs ownerOf(tokenId) on the named ERC-721 identity.
+// A latest-state eth_call is an unfinalized chain observation.
+func (p *AssetProvider) ERC721Owner(ctx context.Context, id gameledger.AssetIdentity) (nft.EVM721Ownership, error) {
+	id, err := id.Normalize()
+	if err != nil {
+		return nft.EVM721Ownership{}, err
+	}
+	if id.Network != p.net.id || id.Standard != gameledger.StandardERC721 {
+		return nft.EVM721Ownership{}, cherrs.New(cherrs.InvalidArgument, p.net.opBase+".nft_owner", "identity must be ERC-721 on this network")
+	}
+	contract := common.HexToAddress(id.Contract)
+	token, _ := new(big.Int).SetString(id.TokenID, 10)
+	sel := keccak4("ownerOf(uint256)")
+	data := append([]byte{}, sel[:]...)
+	data = append(data, common.LeftPadBytes(token.Bytes(), 32)...)
+	var out []byte
+	err = p.net.pool.call(ctx, p.net.opBase, p.net.opBase+".nft_owner", func(c rpcClient) error {
+		var e error
+		out, e = c.CallContract(ctx, ethereum.CallMsg{To: &contract, Data: data}, nil)
+		return e
+	})
+	if err != nil {
+		return nft.EVM721Ownership{}, err
+	}
+	if len(out) < 32 {
+		return nft.EVM721Ownership{}, cherrs.New(cherrs.NetworkUnavailable, p.net.opBase+".nft_owner", "ownerOf returned malformed data")
+	}
+	owner, err := identifiers.NewEVMAddress(common.BytesToAddress(out[len(out)-20:]).Hex())
+	if err != nil {
+		return nft.EVM721Ownership{}, err
+	}
+	return nft.EVM721Ownership{Owner: owner}, nil
+}
+
+// ERC1155Balance performs balanceOf(owner, tokenId), preserving the
+// standard's quantity instead of coercing it to a boolean.
+func (p *AssetProvider) ERC1155Balance(ctx context.Context, id gameledger.AssetIdentity, holder identifiers.Address) (nft.EVM1155Ownership, error) {
+	id, err := id.Normalize()
+	if err != nil {
+		return nft.EVM1155Ownership{}, err
+	}
+	if id.Network != p.net.id || id.Standard != gameledger.StandardERC1155 {
+		return nft.EVM1155Ownership{}, cherrs.New(cherrs.InvalidArgument, p.net.opBase+".nft_balance", "identity must be ERC-1155 on this network")
+	}
+	owner, err := toCommon(p.net.opBase+".nft_balance", holder)
+	if err != nil {
+		return nft.EVM1155Ownership{}, err
+	}
+	contract := common.HexToAddress(id.Contract)
+	token, _ := new(big.Int).SetString(id.TokenID, 10)
+	sel := keccak4("balanceOf(address,uint256)")
+	data := append([]byte{}, sel[:]...)
+	data = append(data, common.LeftPadBytes(owner.Bytes(), 32)...)
+	data = append(data, common.LeftPadBytes(token.Bytes(), 32)...)
+	var out []byte
+	err = p.net.pool.call(ctx, p.net.opBase, p.net.opBase+".nft_balance", func(c rpcClient) error {
+		var e error
+		out, e = c.CallContract(ctx, ethereum.CallMsg{To: &contract, Data: data}, nil)
+		return e
+	})
+	if err != nil {
+		return nft.EVM1155Ownership{}, err
+	}
+	if len(out) < 32 {
+		return nft.EVM1155Ownership{}, cherrs.New(cherrs.NetworkUnavailable, p.net.opBase+".nft_balance", "balanceOf returned malformed data")
+	}
+	return nft.EVM1155Ownership{RawQuantity: new(big.Int).SetBytes(out[len(out)-32:])}, nil
+}
 
 // ERC-20 metadata selectors, computed from the function signatures so a
 // typo cannot silently produce a wrong selector.

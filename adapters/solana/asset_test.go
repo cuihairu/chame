@@ -9,7 +9,9 @@ import (
 	"github.com/gagliardetto/solana-go"
 	"github.com/gagliardetto/solana-go/rpc"
 
+	"github.com/cuihairu/chame/application/gameledger"
 	"github.com/cuihairu/chame/capability/asset"
+	"github.com/cuihairu/chame/capability/nft"
 	"github.com/cuihairu/chame/core/capability"
 	cherrs "github.com/cuihairu/chame/core/errors"
 	"github.com/cuihairu/chame/core/identifiers"
@@ -101,6 +103,46 @@ func TestAssetProviderSPL(t *testing.T) {
 		if got.Details[i] != want[i] {
 			t.Errorf("details[%d] = %+v, want %+v", i, got.Details[i], want[i])
 		}
+	}
+}
+
+func TestSolanaMetaplexNFTIsDistinctFromFungibleSPL(t *testing.T) {
+	f := newFakeClient(solanaHashFor(0x10))
+	mint, _ := solana.PublicKeyFromBase58(mintAddress)
+	program := solana.MustPublicKeyFromBase58(metaplexMetadataProgram)
+	_, _, err := solana.FindProgramAddress([][]byte{[]byte("metadata"), program[:], mint[:]}, program)
+	if err != nil {
+		t.Fatal(err)
+	}
+	metadata := make([]byte, 65)
+	copy(metadata[33:65], mint[:])
+	f.account = &accountResult{Value: &rpc.Account{Owner: program, Data: rpc.DataBytesOrJSONFromBytes(metadata)}}
+	f.tokenAccounts = &tokenAccountsResult{}
+	n := newTestNetwork(f)
+	p := n.AssetProvider()
+	owner := mustAddress(t, sysAccount)
+	nftID := gameledger.AssetIdentity{Network: n.ID(), Standard: gameledger.StandardSPLNFT, Contract: mintAddress, TokenID: "0"}
+	got, err := p.SolanaHolding(context.Background(), nftID, owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Classification != nft.SolanaMetaplexNFT || got.Held {
+		t.Fatalf("NFT classification/holding=%+v", got)
+	}
+	fungibleID := nftID
+	fungibleID.Standard = gameledger.StandardSPL
+	fungibleID.TokenID = ""
+	if _, err := p.SolanaHolding(context.Background(), fungibleID, owner); err == nil {
+		t.Fatal("Metaplex NFT accepted as fungible SPL")
+	}
+}
+
+func TestSolanaNFTQueryPropagatesRPCFailure(t *testing.T) {
+	f := newFakeClient(solanaHashFor(0x10)).fail("account_info", errors.New("offline"))
+	n := newTestNetwork(f)
+	id := gameledger.AssetIdentity{Network: n.ID(), Standard: gameledger.StandardSPLNFT, Contract: mintAddress, TokenID: "0"}
+	if _, err := n.AssetProvider().SolanaHolding(context.Background(), id, mustAddress(t, sysAccount)); err == nil {
+		t.Fatal("RPC error was hidden")
 	}
 }
 
