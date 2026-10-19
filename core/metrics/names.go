@@ -36,7 +36,13 @@ const (
 	// MetricReorgs counts reorganizations detected.
 	MetricReorgs = "reorg_total"
 	// MetricRecoveryBacklog is the recovery task backlog size.
-	MetricRecoveryBacklog = "recovery_backlog"
+	MetricRecoveryBacklog                = "recovery_backlog"
+	MetricTransactionsSubmitted          = "transactions_submitted_total"
+	MetricTransactionsConfirmed          = "transactions_confirmed_total"
+	MetricTransactionsFailed             = "transactions_failed_total"
+	MetricTransactionConfirmationSeconds = "transaction_confirmation_seconds"
+	MetricTransactionTimeouts            = "transaction_timeouts_total"
+	MetricRPCErrorCategories             = "rpc_errors_total"
 )
 
 // Names lists every metric name the framework declares, sorted.
@@ -56,6 +62,12 @@ func Names() []string {
 		MetricFinalityWaitDuration,
 		MetricReorgs,
 		MetricRecoveryBacklog,
+		MetricTransactionsSubmitted,
+		MetricTransactionsConfirmed,
+		MetricTransactionsFailed,
+		MetricTransactionConfirmationSeconds,
+		MetricTransactionTimeouts,
+		MetricRPCErrorCategories,
 	}
 	sort.Strings(out)
 	return out

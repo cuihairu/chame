@@ -15,6 +15,8 @@ const (
 	FieldStage         = "stage"
 	FieldErrorCategory = "error_category"
 	FieldRetryCount    = "retry_count"
+	// FieldIdempotencyKey is an internal correlation field; redact it from public metrics.
+	FieldIdempotencyKey = "idempotency_key"
 )
 
 // App returns the application identity field.
@@ -48,3 +50,6 @@ func ErrorCategory(category string) slog.Attr { return slog.String(FieldErrorCat
 
 // RetryCount returns the retry attempt field.
 func RetryCount(n int) slog.Attr { return slog.Int(FieldRetryCount, n) }
+
+// IdempotencyKey correlates transaction logs. Never copy it to metric labels.
+func IdempotencyKey(key string) slog.Attr { return slog.String(FieldIdempotencyKey, key) }

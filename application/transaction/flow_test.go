@@ -1,8 +1,11 @@
 package transaction_test
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"log/slog"
+	"strings"
 	"sync"
 	"testing"
 
@@ -139,6 +142,29 @@ func TestFlowBeginReplaysTheSameRequest(t *testing.T) {
 	_, err = f.Begin(context.Background(), flowScope(), "key-1", flowSeed("tx-3"))
 	if !errors.Is(err, cherrs.ErrIdempotencyConflict) {
 		t.Fatalf("same key with a different request: want ErrIdempotencyConflict, got %v", err)
+	}
+}
+
+func TestFlowLogsIdempotencyKeyForReplayCorrelation(t *testing.T) {
+	var output bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&output, nil))
+	repo := memory.New()
+	f, err := txapp.NewFlow(repo, &fakeTransactor{}, txapp.WithFlowLogger(logger))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = f.Begin(context.Background(), flowScope(), "internal-order-17", flowSeed("tx-log-1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	replay := flowSeed("tx-log-2")
+	replay.RequestHash = "req-tx-log-1"
+	_, err = f.Begin(context.Background(), flowScope(), "internal-order-17", replay)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Count(output.String(), "idempotency_key=internal-order-17") != 3 || !strings.Contains(output.String(), "transaction operation replayed") {
+		t.Fatalf("same-key correlation missing from logs: %s", output.String())
 	}
 }
 

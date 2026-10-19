@@ -62,8 +62,8 @@ func TestKeyIsStable(t *testing.T) {
 
 func TestNames(t *testing.T) {
 	got := Names()
-	if len(got) != 14 {
-		t.Fatalf("metric names = %d, want 14", len(got))
+	if len(got) != 20 {
+		t.Fatalf("metric names = %d, want 20", len(got))
 	}
 	seen := make(map[string]bool)
 	for _, n := range got {

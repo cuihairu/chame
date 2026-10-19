@@ -123,6 +123,7 @@ func (f *Flow) Begin(ctx context.Context, scope txmodel.IdempotencyScope, key st
 		}
 		return seed, nil
 	}
+	f.logger.InfoContext(ctx, "transaction operation opened", "op_id", seed.OperationID, "tx_id", seed.ID, "idempotency_key", key, "stage", "begin")
 
 	stored, err := f.repo.FindByIdempotencyKey(ctx, scope, key)
 	if err == nil {
@@ -131,6 +132,7 @@ func (f *Flow) Begin(ctx context.Context, scope txmodel.IdempotencyScope, key st
 		}
 		// Replay of the same request: the stored operation is the
 		// operation, so the application reads its progress from it.
+		f.logger.InfoContext(ctx, "transaction operation replayed", "op_id", stored.OperationID, "tx_id", stored.ID, "idempotency_key", key, "stage", "begin")
 		return stored, nil
 	}
 	if !errors.Is(err, txmodel.ErrRecordNotFound) {
@@ -163,6 +165,7 @@ func (f *Flow) Drive(ctx context.Context, id txmodel.TransactionID) (txmodel.Tra
 	if err != nil {
 		return txmodel.Transaction{}, err
 	}
+	f.logger.InfoContext(ctx, "transaction drive", "op_id", tx.OperationID, "tx_id", tx.ID, "idempotency_key", tx.IdempotencyKey, "stage", string(tx.Status))
 	switch tx.Status {
 	case txmodel.TxCreated:
 		return f.prepare(ctx, tx)
