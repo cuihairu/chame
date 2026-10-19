@@ -35,15 +35,24 @@ import (
 // the reference for bytes that may be on chain, the recovery worker
 // reports the outcome as unknown, and the application reconciles it.
 type Flow struct {
-	repo       txmodel.Repository
-	transactor txmodel.Transactor
-	signers    []signer.Signer
-	now        clock.Clock
-	logger     *slog.Logger
+	repo           txmodel.Repository
+	transactor     txmodel.Transactor
+	signers        []signer.Signer
+	now            clock.Clock
+	logger         *slog.Logger
+	approver       Approver
+	limit          *Limit
+	audit          AuditLog
+	controlRequest ControlRequestFunc
 }
 
 // FlowOption customizes the flow.
 type FlowOption func(*Flow)
+
+// WithInternalControls enables host configured approval, limits and audit.
+func WithInternalControls(a Approver, l *Limit, log AuditLog, request ControlRequestFunc) FlowOption {
+	return func(f *Flow) { f.approver, f.limit, f.audit, f.controlRequest = a, l, log, request }
+}
 
 // WithSigners supplies the signers a flow offers to the transactor.
 // Coverage is answered by each signer's own allow-list (§12.3); a payload
@@ -168,6 +177,38 @@ func (f *Flow) Drive(ctx context.Context, id txmodel.TransactionID) (txmodel.Tra
 	f.logger.InfoContext(ctx, "transaction drive", "op_id", tx.OperationID, "tx_id", tx.ID, "idempotency_key", tx.IdempotencyKey, "stage", string(tx.Status))
 	switch tx.Status {
 	case txmodel.TxCreated:
+		if f.approver != nil || f.limit != nil || f.audit != nil {
+			if f.controlRequest == nil {
+				return tx, errors.New("transaction: internal controls require request mapper")
+			}
+			r := f.controlRequest(tx)
+			r.At = f.now.Now()
+			result, reason := "allowed", ""
+			if err := f.limit.Check(r); err != nil {
+				result, reason = "denied", err.Error()
+			}
+			if reason == "" && f.approver != nil {
+				ok, err := f.approver.Approve(ctx, r)
+				if err != nil {
+					return tx, err
+				}
+				if !ok {
+					result, reason = "denied", "approval required"
+				}
+			}
+			if f.audit != nil {
+				if err := f.audit.Append(ctx, AuditEntry{Operator: r.Operator, Action: r.Action, IdempotencyKey: r.IdempotencyKey, Network: r.Network, Result: result, Reason: reason, At: r.At}); err != nil {
+					return tx, err
+				}
+			}
+			if reason != "" {
+				failed, err := f.failRecord(ctx, tx, txmodel.TxCreated)
+				if err != nil {
+					return failed, err
+				}
+				return failed, ErrControlDenied
+			}
+		}
 		return f.prepare(ctx, tx)
 	case txmodel.TxPrepared:
 		return f.authorize(ctx, tx, txmodel.Prepared{})
