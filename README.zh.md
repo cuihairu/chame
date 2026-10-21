@@ -1,3 +1,5 @@
+[![Status](https://img.shields.io/badge/status-in%20development-orange)](https://github.com/cuihairu/chame/releases)
+
 > [English](README.md) | **中文**
 
 <p align="center"><img src="assets/logo.jpg" alt="Chame logo" width="64" height="64"></p>
