@@ -1,10 +1,10 @@
-[![Status](https://img.shields.io/badge/status-in%20development-orange)](https://github.com/cuihairu/chame/releases)
 
 > **English** | [中文](README.zh.md)
 
 <p align="center"><img src="assets/logo.jpg" alt="Chame logo" width="64" height="64"></p>
 
 <h1 align="center">Chame</h1>
+[![Status](https://img.shields.io/badge/status-in%20development-orange)](https://github.com/cuihairu/chame/releases)
 
 <p align="center">
   <a href="https://github.com/cuihairu/chame/actions"><img src="https://github.com/cuihairu/chame/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
