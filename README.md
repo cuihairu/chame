@@ -4,8 +4,9 @@
 <p align="center"><img src="assets/logo.jpg" alt="Chame logo" width="64" height="64"></p>
 
 <h1 align="center">Chame</h1>
-<a href="https://github.com/cuihairu/chame/releases"><img alt="Status" src="https://img.shields.io/badge/status-in%20development-orange"></a>
+
 <p align="center">
+<a href="https://github.com/cuihairu/chame/releases"><img alt="Status" src="https://img.shields.io/badge/status-in%20development-orange"></a>
 <a href="https://github.com/cuihairu/chame/actions"><img src="https://github.com/cuihairu/chame/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="License"></a> <a href="https://go.dev/"><img src="https://img.shields.io/badge/go-1.26%2B-00ADD8?logo=go&logoColor=white" alt="Go"></a> <img src="https://img.shields.io/badge/status-design-orange" alt="Status">
 </p>
 
