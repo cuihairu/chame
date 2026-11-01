@@ -1,17 +1,13 @@
 
 > [English](README.md) | **中文**
 
-<p align="center"><img src="assets/logo.jpg" alt="Chame logo" width="64" height="64"></p>
-
-<h1 align="center">Chame</h1>
-
-<p align="center">
-<a href="https://github.com/cuihairu/chame/releases"><img alt="Status" src="https://img.shields.io/badge/status-in%20development-orange"></a>
-<a href="https://github.com/cuihairu/chame/actions"><img src="https://github.com/cuihairu/chame/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="License"></a> <a href="https://go.dev/"><img src="https://img.shields.io/badge/go-1.26%2B-00ADD8?logo=go&logoColor=white" alt="Go"></a> <img src="https://img.shields.io/badge/status-design-orange" alt="Status">
+<p align="center"><img src="assets/logo.jpg" alt="Chame logo" width="64" height="64"> <a href="https://cuihairu.github.io/chame/zh//"><img src="https://img.shields.io/badge/%E6%96%87%E6%A1%A3-blue" alt="docs"></a>
 </p>
 
+<h1 align="center">Chame</h1>
+<a href="https://github.com/cuihairu/chame/releases"><img alt="Status" src="https://img.shields.io/badge/status-in%20development-orange"></a>
 <p align="center">
-<img src="docs/public/images/architecture-zh.svg" alt="Chame Go 游戏后端框架架构" width="90%">
+<a href="https://github.com/cuihairu/chame/actions"><img src="https://github.com/cuihairu/chame/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="License"></a> <a href="https://go.dev/"><img src="https://img.shields.io/badge/go-1.26%2B-00ADD8?logo=go&logoColor=white" alt="Go"></a> <img src="https://img.shields.io/badge/status-design-orange" alt="Status">
 </p>
 
 **Chame** 是一个把区块链抽象在统一运行时之后的 **Go 游戏后端框架**。游戏侧只面对
