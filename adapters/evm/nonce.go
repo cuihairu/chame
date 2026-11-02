@@ -163,7 +163,10 @@ func (c *NonceCoordinator) Abandon(sender identifiers.Address, nonce uint64) err
 // Reconcile refreshes the chain nonce and classifies every lease (spec
 // §7.5). A chain that moved backwards — a reorg, a lagging endpoint —
 // never lowers the coordinator's high-water mark: the next allocation
-// stays above every nonce this process has ever handed out.
+// stays above every nonce this process has ever handed out. A chain that
+// moved forward past nonces this process had planned to use — an external
+// writer consumed them — raises the high-water mark too, so a stale nonce
+// is never handed out again.
 func (c *NonceCoordinator) Reconcile(ctx context.Context, sender identifiers.Address) (NonceReconcile, error) {
 	s := c.sender(sender)
 	s.mu.Lock()
@@ -179,6 +182,18 @@ func (c *NonceCoordinator) Reconcile(ctx context.Context, sender identifiers.Add
 	}
 	if nonce > s.chainNext {
 		s.chainNext = nonce
+	}
+	// An external writer may have consumed nonces we planned to hand out
+	// (the Foreign path). Never distribute a nonce the chain has already
+	// passed: raise the fresh-allocation high-water mark and drop abandoned
+	// nonces the chain has consumed.
+	if s.chainNext > s.next {
+		s.next = s.chainNext
+	}
+	for n := range s.free {
+		if n < s.chainNext {
+			delete(s.free, n)
+		}
 	}
 	report.ChainNext = s.chainNext
 

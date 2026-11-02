@@ -259,6 +259,59 @@ func TestNonceReconcileReportsForeignConsumption(t *testing.T) {
 	}
 }
 
+func TestNonceReconcileNeverHandsOutStaleNonce(t *testing.T) {
+	c, fake := seededCoordinator(t, 7)
+
+	// We planned to hand out 7 but never broadcast it.
+	n, _ := c.Next(context.Background(), nonceAddr)
+	if n != 7 {
+		t.Fatalf("nonce = %d, want 7", n)
+	}
+	// An external writer consumed 7..9; the chain now points at 10.
+	fake.withPendingNonce(common.HexToAddress(nonceAddr.Value), 10)
+	if _, err := c.Reconcile(context.Background(), nonceAddr); err != nil {
+		t.Fatalf("Reconcile: %v", err)
+	}
+
+	next, err := c.Next(context.Background(), nonceAddr)
+	if err != nil {
+		t.Fatalf("Next after reconcile: %v", err)
+	}
+	// The stale allocated 7 must never be handed out again; the fresh
+	// allocation resumes at the chain's high-water mark.
+	if next != 10 {
+		t.Errorf("nonce after external advance = %d, want 10 (no stale nonce below chainNext)", next)
+	}
+}
+
+func TestNonceReconcileDropsStaleAbandonedNonce(t *testing.T) {
+	c, fake := seededCoordinator(t, 7)
+
+	seven, _ := c.Next(context.Background(), nonceAddr)
+	if seven != 7 {
+		t.Fatalf("nonce = %d, want 7", seven)
+	}
+	// The build failed before broadcast; the nonce goes back to the pool.
+	if err := c.Abandon(nonceAddr, seven); err != nil {
+		t.Fatalf("Abandon: %v", err)
+	}
+	// An external writer consumed 7 and 8.
+	fake.withPendingNonce(common.HexToAddress(nonceAddr.Value), 9)
+	if _, err := c.Reconcile(context.Background(), nonceAddr); err != nil {
+		t.Fatalf("Reconcile: %v", err)
+	}
+
+	next, err := c.Next(context.Background(), nonceAddr)
+	if err != nil {
+		t.Fatalf("Next after reconcile: %v", err)
+	}
+	// The abandoned nonce 7 sits below the chain and must be dropped from
+	// the free pool, not reused.
+	if next != 9 {
+		t.Errorf("nonce after reconcile = %d, want 9 (abandoned nonce below chainNext is not reused)", next)
+	}
+}
+
 func TestNonceReconcileNeverRegresses(t *testing.T) {
 	c, fake := seededCoordinator(t, 7)
 
