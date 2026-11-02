@@ -312,6 +312,39 @@ func TestNonceReconcileDropsStaleAbandonedNonce(t *testing.T) {
 	}
 }
 
+func TestNonceReconcileForeignLeaseNotReusable(t *testing.T) {
+	c, fake := seededCoordinator(t, 7)
+
+	// We planned to hand out 7 but never broadcast it. An external writer
+	// consumed it, so Reconcile classifies it Foreign and retires the lease.
+	seven, _ := c.Next(context.Background(), nonceAddr)
+	if seven != 7 {
+		t.Fatalf("nonce = %d, want 7", seven)
+	}
+	fake.withPendingNonce(common.HexToAddress(nonceAddr.Value), 8)
+	report, err := c.Reconcile(context.Background(), nonceAddr)
+	if err != nil {
+		t.Fatalf("Reconcile: %v", err)
+	}
+	if len(report.Foreign) != 1 || report.Foreign[0] != 7 {
+		t.Fatalf("foreign = %v, want [7]", report.Foreign)
+	}
+
+	// The build that never broadcast it later fails and abandons it. The
+	// chain already consumed 7, so Abandon must refuse — the lease is gone,
+	// and 7 must never re-enter the free pool.
+	if err := c.Abandon(nonceAddr, seven); !errors.Is(err, ErrUnknownNonce) {
+		t.Errorf("Abandon after foreign reconcile: err = %v, want unknown nonce", err)
+	}
+	next, err := c.Next(context.Background(), nonceAddr)
+	if err != nil {
+		t.Fatalf("Next after foreign reconcile: %v", err)
+	}
+	if next != 8 {
+		t.Errorf("nonce after foreign reconcile = %d, want 8 (consumed nonce never reused)", next)
+	}
+}
+
 func TestNonceReconcileNeverRegresses(t *testing.T) {
 	c, fake := seededCoordinator(t, 7)
 
@@ -360,25 +393,24 @@ func TestNonceReconcileQueryFailureChangesNothing(t *testing.T) {
 func TestNonceSnapshotSummarizesLeases(t *testing.T) {
 	c, fake := seededCoordinator(t, 7)
 
-	a, _ := c.Next(context.Background(), nonceAddr) // stays allocated
+	a, _ := c.Next(context.Background(), nonceAddr) // consumed by another writer
 	b, _ := c.Next(context.Background(), nonceAddr) // submitted
 	d, _ := c.Next(context.Background(), nonceAddr) // abandoned
+	_ = a
 	if err := c.Submitted(nonceAddr, b); err != nil {
 		t.Fatalf("Submitted: %v", err)
 	}
 	if err := c.Abandon(nonceAddr, d); err != nil {
 		t.Fatalf("Abandon: %v", err)
 	}
-	_ = a
-
 	fake.withPendingNonce(common.HexToAddress(nonceAddr.Value), 8)
 	if _, err := c.Reconcile(context.Background(), nonceAddr); err != nil {
 		t.Fatalf("Reconcile: %v", err)
 	}
 
 	snap := c.Snapshot(nonceAddr)
-	if snap.Seeded != true || snap.Allocated != 1 || snap.Submitted != 1 {
-		t.Errorf("snapshot = %+v, want seeded with one allocated and one submitted lease", snap)
+	if snap.Seeded != true || snap.Allocated != 0 || snap.Submitted != 1 {
+		t.Errorf("snapshot = %+v, want seeded with one submitted lease (the foreign lease is retired)", snap)
 	}
 	if snap.Next != 10 {
 		t.Errorf("next = %d, want 10", snap.Next)

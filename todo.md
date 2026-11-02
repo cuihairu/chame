@@ -52,3 +52,10 @@
 - 发布正式版本必须由用户明确给出版本号并触发
 - 单 commit 英文简短，rebase 后推，不打 tag，不 force push
 - 文档不得出现 AI 设计 / ui ux pro max / 舰队 等元叙事字样
+
+## 审核发现（651be58..HEAD）
+
+- [x] 审核发现：Reconcile 只把低于 chainNext 的 nonce 从 free 池删除、却将 Foreign 租约留在 leases 中，该租约随后经 Abandon 重新入 free 池，链已消费的 nonce 可被再次分发，恰好绕过本修复的目标（adapters/evm/nonce.go:148）— Reconcile 现在删除 Foreign 租约，Abandon 返回 ErrUnknownNonce，不再复用（adapters/evm/nonce.go:210、adapters/evm/nonce_test.go:315，480 测试）
+- [ ] 审核发现：advisory 锁加在 applyMigration 事务内，但 migrationTable 的 CREATE TABLE IF NOT EXISTS 在锁外执行，双副本真空首启（表尚不存在）仍可能并发建表竞态失败，与注释宣称的跨实例收敛不符（infrastructure/persistence/sql/store.go:93）
+- [ ] 审核发现：并发迁移测试在已迁移的共享库上运行，两个 goroutine 均走「已应用即返回」路径，锁所针对的首启竞态路径未被实际覆盖，注释引用的 TestStoreMigrateIsIdempotent 是串行测试也覆盖不到（infrastructure/persistence/sql/store_test.go:86）
+- [ ] 审核发现：Settle 对非 ErrUnknownNonce 的错误仅累加错误计数器即丢弃，错误中携带的 nonce/sender 诊断细节无任何日志可查，运维只能看到计数上涨无从定位（adapters/evm/flow.go:279）

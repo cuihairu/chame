@@ -197,6 +197,8 @@ func (c *NonceCoordinator) Reconcile(ctx context.Context, sender identifiers.Add
 	}
 	report.ChainNext = s.chainNext
 
+	// Retire foreign leases: an external writer consumed these nonces,
+	// so they must never re-enter the free pool through Abandon.
 	for n, state := range s.leases {
 		switch {
 		case state == NonceSubmitted && n < s.chainNext:
@@ -205,6 +207,7 @@ func (c *NonceCoordinator) Reconcile(ctx context.Context, sender identifiers.Add
 			report.InFlight = append(report.InFlight, n)
 		case n < s.chainNext:
 			report.Foreign = append(report.Foreign, n)
+			delete(s.leases, n)
 		default:
 			report.Open = append(report.Open, n)
 		}
