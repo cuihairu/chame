@@ -199,10 +199,15 @@ func (c *NonceCoordinator) Reconcile(ctx context.Context, sender identifiers.Add
 
 	// Retire foreign leases: an external writer consumed these nonces,
 	// so they must never re-enter the free pool through Abandon.
+	// Retire consumed leases too: once the chain has accepted them, their
+	// transaction is no longer open. Keeping the record in a bounded,
+	// in-memory ledger would grow without limit; transaction records remain
+	// the durable evidence for every submission.
 	for n, state := range s.leases {
 		switch {
 		case state == NonceSubmitted && n < s.chainNext:
 			report.Consumed = append(report.Consumed, n)
+			delete(s.leases, n)
 		case state == NonceSubmitted:
 			report.InFlight = append(report.InFlight, n)
 		case n < s.chainNext:

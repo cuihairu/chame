@@ -345,6 +345,38 @@ func TestNonceReconcileForeignLeaseNotReusable(t *testing.T) {
 	}
 }
 
+func TestNonceReconcileRetiresConsumedLeases(t *testing.T) {
+	c, fake := seededCoordinator(t, 7)
+
+	seven, _ := c.Next(context.Background(), nonceAddr)
+	if err := c.Submitted(nonceAddr, seven); err != nil {
+		t.Fatalf("Submitted %d: %v", seven, err)
+	}
+	// eight stays allocated and unsubmitted: the chain has not consumed it.
+	eight, _ := c.Next(context.Background(), nonceAddr)
+	_ = eight
+	fake.withPendingNonce(common.HexToAddress(nonceAddr.Value), 8)
+
+	report, err := c.Reconcile(context.Background(), nonceAddr)
+	if err != nil {
+		t.Fatalf("Reconcile: %v", err)
+	}
+	if len(report.Consumed) != 1 || report.Consumed[0] != seven {
+		t.Fatalf("consumed = %v, want [%d]", report.Consumed, seven)
+	}
+	if snap := c.Snapshot(nonceAddr); snap.Submitted != 0 || snap.Allocated != 1 {
+		t.Fatalf("snapshot = %+v, want the consumed lease retired and only the open allocation retained", snap)
+	}
+
+	report, err = c.Reconcile(context.Background(), nonceAddr)
+	if err != nil {
+		t.Fatalf("second Reconcile: %v", err)
+	}
+	if len(report.Consumed) != 0 {
+		t.Fatalf("second consumed = %v, want no unbounded repeat", report.Consumed)
+	}
+}
+
 func TestNonceReconcileNeverRegresses(t *testing.T) {
 	c, fake := seededCoordinator(t, 7)
 
