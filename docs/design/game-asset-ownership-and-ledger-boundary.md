@@ -4,7 +4,7 @@
 
 ## 决策
 
-**链是外部资产事实的权威来源，游戏账本是游戏内可用权/物品的权威来源；只有满足游戏配置的 finality 门槛且事件仍在 canonical chain 上，链事件才可作为账本入账依据。** 查询到的余额不是游戏账本，也不自动赋予某个玩家兑换、消费或转移权。`AssetProvider` 只提供资产/余额查询，SPL holder 参数表示 token account，见 [`capability/asset/asset.go:65`](../../capability/asset/asset.go#L65)；事件 dispatcher 按配置门槛延迟投递，重组失效交由业务处理，见 [`application/eventing/dispatcher.go:131`](../../application/eventing/dispatcher.go#L131) 与 [`application/eventing/dispatcher.go:221`](../../application/eventing/dispatcher.go#L221)。
+**链是外部资产事实的权威来源，游戏账本是游戏内可用权/物品的权威来源；只有满足游戏配置的 finality 门槛且事件仍在 canonical chain 上，链事件才可作为账本入账依据。** 查询到的余额不是游戏账本，也不自动赋予某个玩家兑换、消费或转移权。`AssetProvider` 只提供资产/余额查询，SPL holder 参数表示 token account，见 [`capability/asset/asset.go:71`](../../capability/asset/asset.go#L71)；事件 dispatcher 按配置门槛延迟投递（`MinFinality`，[`application/eventing/dispatcher.go:39`](../../application/eventing/dispatcher.go#L39)），重组失效交由业务处理（`Reorg` 回调，[`application/eventing/dispatcher.go:102`](../../application/eventing/dispatcher.go#L102)）。
 
 ## 规范资产身份
 
@@ -26,7 +26,7 @@
 
 ## 范围与明确不做
 
-本仓当前仍是 native/ERC-20/SPL fungible 查询面；本设计不声称已经提供链上 NFT 所有权索引，也不新增生产游戏账本、玩家/钱包绑定、市场、掉落、客服对账或争议工作流。账本参考包是最小可验证契约，不是持久化实现；宿主须实现事务性唯一约束、授权和业务补偿。通用派生投影的重建契约见下节。**不实现托管钱包，不运营生产密钥**，生产 HSM/KMS、轮换、审批与资金控制由宿主另行负责，范围依据分析缺失项第 5 条 [`chain-game-foundation-2026-10-19.md:57`](../analysis/chain-game-foundation-2026-10-19.md#L57)。
+本仓当前提供 native/ERC-20/SPL fungible 查询面，并经 `capability/nft` 提供只读 NFT 所有权查询（EVM ERC-721 `ownerOf`、ERC-1155 `balanceOf`、Solana SPL 持有关系，见 [`capability/nft/nft.go:40`](../../capability/nft/nft.go#L40)，两适配器分别以 [`adapters/evm/asset.go:18`](../../adapters/evm/asset.go#L18) 与 [`adapters/solana/asset.go:18`](../../adapters/solana/asset.go#L18) 接入）；本设计不提供链上 NFT 所有权索引（查询≠索引）、不新增生产游戏账本、玩家/钱包绑定、市场、掉落、客服对账或争议工作流。账本参考包是最小可验证契约，不是持久化实现；宿主须实现事务性唯一约束、授权和业务补偿。通用派生投影的重建契约见下节。**不实现托管钱包，不运营生产密钥**，生产 HSM/KMS、轮换、审批与资金控制由宿主另行负责，范围依据分析缺失项第 5 条 [`chain-game-foundation-2026-10-19.md:57`](../analysis/chain-game-foundation-2026-10-19.md#L57)。
 
 任何数据外发、分析导出或云备份默认关闭；宿主显式启用前不得将玩家、钱包或账本数据发送至外部服务。
 

@@ -1,13 +1,12 @@
 
 > **English** | [中文](README.zh.md)
 
-<p align="center"><img src="assets/logo.jpg" alt="Chame logo" width="64" height="64"> <a href="https://cuihairu.github.io/chame//"><img src="https://img.shields.io/badge/docs-blue" alt="docs"></a>
-</p>
+<p align="center"><img src="assets/logo.jpg" alt="Chame logo" width="64" height="64"></p>
 
 <h1 align="center">Chame</h1>
-<a href="https://github.com/cuihairu/chame/releases"><img alt="Status" src="https://img.shields.io/badge/status-in%20development-orange"></a>
+
 <p align="center">
-<a href="https://github.com/cuihairu/chame/actions"><img src="https://github.com/cuihairu/chame/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="License"></a> <a href="https://go.dev/"><img src="https://img.shields.io/badge/go-1.26%2B-00ADD8?logo=go&logoColor=white" alt="Go"></a> <img src="https://img.shields.io/badge/status-design-orange" alt="Status">
+<a href="https://github.com/cuihairu/chame/releases"><img alt="Status" src="https://img.shields.io/badge/status-in%20development-orange"></a> <a href="https://github.com/cuihairu/chame/actions"><img src="https://github.com/cuihairu/chame/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="License"></a> <a href="https://go.dev/"><img src="https://img.shields.io/badge/go-1.26%2B-00ADD8?logo=go&logoColor=white" alt="Go"></a> <a href="https://cuihairu.github.io/chame/"><img src="https://img.shields.io/badge/docs-blue" alt="docs"></a>
 </p>
 
 **Chame** is a Go game backend framework that abstracts blockchains behind one
@@ -35,7 +34,7 @@ behind an adapter so the game side keeps one contract.
 
 ## Status
 
-**Phases 1–9 landed.** The full spec lives in
+**Phases 0–8 landed.** The full spec lives in
 [`docs/design/chame-spec.md`](docs/design/chame-spec.md) — 24 chapters covering
 architecture, adapters, transaction state machine, idempotency, event handling,
 signing, error model, observability, testing, CI, phased rollout, and a
@@ -80,7 +79,7 @@ scopes, so an unavailable optional Solana module leaves a service that
 never touches Solana ready). Architecture decisions
 live in [`docs/design/decisions.md`](docs/design/decisions.md) with detailed
 ADRs in [`docs/decisions/`](docs/decisions/). Phased implementation is
-tracked in [`todo.md`](todo.md) — next: the test system and CI.
+tracked in [`todo.md`](todo.md).
 
 ## Development
 

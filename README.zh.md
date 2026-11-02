@@ -1,13 +1,12 @@
 
 > [English](README.md) | **中文**
 
-<p align="center"><img src="assets/logo.jpg" alt="Chame logo" width="64" height="64"> <a href="https://cuihairu.github.io/chame/zh//"><img src="https://img.shields.io/badge/%E6%96%87%E6%A1%A3-blue" alt="docs"></a>
-</p>
+<p align="center"><img src="assets/logo.jpg" alt="Chame logo" width="64" height="64"></p>
 
 <h1 align="center">Chame</h1>
-<a href="https://github.com/cuihairu/chame/releases"><img alt="Status" src="https://img.shields.io/badge/status-in%20development-orange"></a>
+
 <p align="center">
-<a href="https://github.com/cuihairu/chame/actions"><img src="https://github.com/cuihairu/chame/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="License"></a> <a href="https://go.dev/"><img src="https://img.shields.io/badge/go-1.26%2B-00ADD8?logo=go&logoColor=white" alt="Go"></a> <img src="https://img.shields.io/badge/status-design-orange" alt="Status">
+<a href="https://github.com/cuihairu/chame/releases"><img alt="Status" src="https://img.shields.io/badge/status-in%20development-orange"></a> <a href="https://github.com/cuihairu/chame/actions"><img src="https://github.com/cuihairu/chame/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="License"></a> <a href="https://go.dev/"><img src="https://img.shields.io/badge/go-1.26%2B-00ADD8?logo=go&logoColor=white" alt="Go"></a> <a href="https://cuihairu.github.io/chame/zh/"><img src="https://img.shields.io/badge/%E6%96%87%E6%A1%A3-blue" alt="docs"></a>
 </p>
 
 **Chame** 是一个把区块链抽象在统一运行时之后的 **Go 游戏后端框架**。游戏侧只面对
@@ -33,7 +32,7 @@ Chame 把链收进适配器，游戏侧保持同一份契约。
 
 ## 当前状态
 
-**阶段一至九已落地。** 完整规格见
+**阶段零至八已落地。** 完整规格见
 [`docs/design/chame-spec.md`](docs/design/chame-spec.md)——共 24 章，覆盖架构、
 适配器、交易状态机、幂等、事件处理、签名、错误模型、可观测性、测试、CI、
 分期实施与完成定义。
@@ -65,8 +64,7 @@ Handler（脱敏密文字段名与 URL 凭据）；指标契约、封闭的标�
 不会让完全不使用 Solana 的服务失去就绪）。
 架构决策汇总在
 [`docs/design/decisions.md`](docs/design/decisions.md)，详细 ADR 在
-[`docs/decisions/`](docs/decisions/)。分期实施见 [`todo.md`](todo.md)——
-下一步：测试体系与 CI。
+[`docs/decisions/`](docs/decisions/)。分期实施见 [`todo.md`](todo.md)。
 
 ## 开发
 

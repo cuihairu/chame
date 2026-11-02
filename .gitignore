@@ -9,3 +9,7 @@ coverage.txt
 # editors
 .idea/
 .vscode/
+
+# docs site (VitePress)
+docs/node_modules/
+docs/.vitepress/dist/
