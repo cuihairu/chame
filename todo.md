@@ -56,6 +56,6 @@
 ## 审核发现（651be58..HEAD）
 
 - [x] 审核发现：Reconcile 只把低于 chainNext 的 nonce 从 free 池删除、却将 Foreign 租约留在 leases 中，该租约随后经 Abandon 重新入 free 池，链已消费的 nonce 可被再次分发，恰好绕过本修复的目标（adapters/evm/nonce.go:148）— Reconcile 现在删除 Foreign 租约，Abandon 返回 ErrUnknownNonce，不再复用（adapters/evm/nonce.go:210、adapters/evm/nonce_test.go:315，480 测试）
-- [ ] 审核发现：advisory 锁加在 applyMigration 事务内，但 migrationTable 的 CREATE TABLE IF NOT EXISTS 在锁外执行，双副本真空首启（表尚不存在）仍可能并发建表竞态失败，与注释宣称的跨实例收敛不符（infrastructure/persistence/sql/store.go:93）
-- [ ] 审核发现：并发迁移测试在已迁移的共享库上运行，两个 goroutine 均走「已应用即返回」路径，锁所针对的首启竞态路径未被实际覆盖，注释引用的 TestStoreMigrateIsIdempotent 是串行测试也覆盖不到（infrastructure/persistence/sql/store_test.go:86）
-- [ ] 审核发现：Settle 对非 ErrUnknownNonce 的错误仅累加错误计数器即丢弃，错误中携带的 nonce/sender 诊断细节无任何日志可查，运维只能看到计数上涨无从定位（adapters/evm/flow.go:279）
+- [x] 审核发现：advisory 锁加在 applyMigration 事务内，但 migrationTable 的 CREATE TABLE IF NOT EXISTS 在锁外执行，双副本真空首启（表尚不存在）仍可能并发建表竞态失败，与注释宣称的跨实例收敛不符（infrastructure/persistence/sql/store.go:93）— 建表纳入同一 advisory 锁，新测试在真空库上并发 Migrate 实证不再冲突（infrastructure/persistence/sql/store.go:110、infrastructure/persistence/sql/store_test.go:120，489 测试）
+- [x] 审核发现：并发迁移测试在已迁移的共享库上运行，两个 goroutine 均走「已应用即返回」路径，锁所针对的首启竞态路径未被实际覆盖，注释引用的 TestStoreMigrateIsIdempotent 是串行测试也覆盖不到（infrastructure/persistence/sql/store_test.go:86）— 新增真空库并发首启测试，回退修复前该测试实测失败（duplicate key, pg_type_typname_nsp_index），修复后通过（infrastructure/persistence/sql/store_test.go:120，489 测试）
+- [x] 审核发现：Settle 对非 ErrUnknownNonce 的错误仅累加错误计数器即丢弃，错误中携带的 nonce/sender 诊断细节无任何日志可查，运维只能看到计数上涨无从定位（adapters/evm/flow.go:279）— Settle 现记录错误日志（sender/nonce/outcome/error），新测试断言日志内容（adapters/evm/flow.go:297、adapters/evm/flow_test.go:271，489 测试）
