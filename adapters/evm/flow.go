@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"math/big"
 	"time"
 
@@ -13,6 +14,14 @@ import (
 	cherrs "github.com/cuihairu/chame/core/errors"
 	"github.com/cuihairu/chame/core/identifiers"
 )
+
+// nonceSettle is the subset of NonceCoordinator Settle uses. The seam
+// lets tests inject a stub and drive the diagnostic path for an error
+// other than ErrUnknownNonce.
+type nonceSettle interface {
+	Submitted(sender identifiers.Address, nonce uint64) error
+	Abandon(sender identifiers.Address, nonce uint64) error
+}
 
 // BuildIntent is the storable form of a build query: the amounts travel
 // as decimal strings so a durable store round-trips the intent the
@@ -273,15 +282,26 @@ func (n *Network) Settle(ctx context.Context, tx txmodel.Transaction, outcome tx
 	// error is tolerated: a claim the coordinator does not know — an
 	// intent that pinned its own nonce. Submitted and Abandon can report
 	// nothing else today; a future category surfaces on the error counter
-	// instead of vanishing behind a blanket ignore.
+	// AND on the diagnostic log with the sender and nonce an operator
+	// needs to locate it (spec §15.1: 操作阶段、错误类别、网络标识).
+	var settleErr error
 	switch outcome {
 	case txmodel.SettleBroadcast:
-		if err := n.NonceCoordinator().Submitted(rec.Intent.Sender, *rec.Nonce); err != nil && !errors.Is(err, ErrUnknownNonce) {
-			n.stats.countError()
-		}
+		settleErr = n.settleNonces.Submitted(rec.Intent.Sender, *rec.Nonce)
 	case txmodel.SettleFailed:
-		if err := n.NonceCoordinator().Abandon(rec.Intent.Sender, *rec.Nonce); err != nil && !errors.Is(err, ErrUnknownNonce) {
-			n.stats.countError()
+		settleErr = n.settleNonces.Abandon(rec.Intent.Sender, *rec.Nonce)
+	}
+	if settleErr != nil && !errors.Is(settleErr, ErrUnknownNonce) {
+		n.stats.countError()
+		if n.logger != nil {
+			n.logger.Error("settle failed",
+				slog.String("phase", "settle"),
+				slog.String("network", n.id.String()),
+				slog.String("transaction", string(tx.ID)),
+				slog.String("sender", rec.Intent.Sender.String()),
+				slog.Uint64("nonce", *rec.Nonce),
+				slog.String("outcome", string(outcome)),
+				slog.String("error", settleErr.Error()))
 		}
 	}
 }

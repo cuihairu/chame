@@ -2,7 +2,10 @@ package evm
 
 import (
 	"context"
+	"errors"
+	"log/slog"
 	"math/big"
+	"strings"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -245,6 +248,50 @@ func TestFlowSettleToleratesAnUnknownNonce(t *testing.T) {
 	n.Settle(context.Background(), tx, txmodel.SettleFailed)
 	if s := n.Stats(); s.Errors != 0 {
 		t.Fatalf("errors = %d, want 0 (an unknown claim is tolerated)", s.Errors)
+	}
+}
+
+// errOtherSettle is a settle error the coordinator does not produce
+// today; the stub injects it to pin the diagnostic path for a future
+// error category.
+var errOtherSettle = errors.New("evm: injected settle failure")
+
+// stubNonceSettle drives the settle nonce seam without a coordinator.
+type stubNonceSettle struct {
+	err error
+}
+
+func (s stubNonceSettle) Submitted(_ identifiers.Address, _ uint64) error { return s.err }
+func (s stubNonceSettle) Abandon(_ identifiers.Address, _ uint64) error   { return s.err }
+
+// TestFlowSettleLogsANonUnknownError pins the diagnostic requirement: an
+// error other than ErrUnknownNonce surfaces on the error counter AND on
+// the log with the sender, nonce, and outcome an operator needs to
+// locate it (spec §15.1). It must not vanish behind a bare counter bump.
+func TestFlowSettleLogsANonUnknownError(t *testing.T) {
+	n, _ := flowNetwork(t)
+	var logs strings.Builder
+	n.logger = slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelError}))
+	n.settleNonces = stubNonceSettle{err: errOtherSettle}
+
+	pinned := uint64(7)
+	tx := flowRecord("tx-settle-err", flowIntent(t))
+	tx.ChainData = &ChainRecord{Intent: flowIntent(t), Nonce: &pinned}
+
+	n.Settle(context.Background(), tx, txmodel.SettleBroadcast)
+	n.Settle(context.Background(), tx, txmodel.SettleFailed)
+
+	if s := n.Stats(); s.Errors != 2 {
+		t.Fatalf("errors = %d, want 2 (each non-unknown error counts)", s.Errors)
+	}
+	line := logs.String()
+	if !strings.Contains(line, "settle failed") {
+		t.Fatalf("log missing settle message, got:\n%s", line)
+	}
+	for _, want := range []string{"sender", "nonce=7", "outcome=broadcast", "outcome=failed", "injected settle failure"} {
+		if !strings.Contains(line, want) {
+			t.Fatalf("log missing %q, got:\n%s", want, line)
+		}
 	}
 }
 

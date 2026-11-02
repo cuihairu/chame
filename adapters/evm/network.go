@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
+	"log/slog"
 	"math"
 	"math/big"
 	"strings"
@@ -114,6 +115,12 @@ type Network struct {
 	opBase string
 	// nonces allocates account nonces for this instance (spec §7.5).
 	nonces *NonceCoordinator
+	// settleNonces is the nonce state-change seam Settle uses. It is the
+	// same coordinator in production; tests inject a stub to drive the
+	// non-unknown error diagnostic path.
+	settleNonces nonceSettle
+	// logger emits diagnostics; default slog.Default().
+	logger *slog.Logger
 }
 
 // newNetwork wires the instance around the dialed endpoint clients.
@@ -124,6 +131,7 @@ func newNetwork(cfg NetworkConfig, clients []rpcClient) *Network {
 		id:     cfg.networkID(),
 		stats:  stats,
 		opBase: "evm." + cfg.Name,
+		logger: slog.Default(),
 	}
 	if len(clients) > 0 {
 		n.pool = newEndpointPool(clients, stats)
@@ -132,6 +140,7 @@ func newNetwork(cfg NetworkConfig, clients []rpcClient) *Network {
 	// coordinator; each is built off the other, so wire it here rather
 	// than in the constructor's argument list.
 	n.nonces = NewNonceCoordinator(n)
+	n.settleNonces = n.nonces
 	return n
 }
 
