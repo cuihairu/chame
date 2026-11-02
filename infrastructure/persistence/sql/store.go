@@ -80,6 +80,12 @@ const migrationTable = `CREATE TABLE IF NOT EXISTS chame_schema_migrations (
 	applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
 )`
 
+// migrationLockKey is the transaction-scoped advisory-lock key that
+// serializes migration application across instances. Any constant works;
+// it must merely never collide with another advisory lock in the same
+// database ("chame" in hex, 5 bytes).
+const migrationLockKey = int64(0x6368616d65)
+
 // Migrate applies every embedded migration not yet recorded, in
 // filename order, each in its own transaction. It is idempotent and safe
 // to call on every start.
@@ -96,13 +102,20 @@ func (s *Store) Migrate(ctx context.Context) error {
 }
 
 // applyMigration runs one migration inside a transaction, recorded in
-// chame_schema_migrations so a partial application never repeats.
+// chame_schema_migrations so a partial application never repeats. The
+// transaction-scoped advisory lock serializes the check-and-record across
+// instances: two replicas migrating on first start converge on one
+// application instead of racing on the version primary key.
 func (s *Store) applyMigration(ctx context.Context, m migration) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return cherrs.New(cherrs.PersistenceFailure, "transaction.sql.migrate", "%v", err)
 	}
 	defer func() { _ = tx.Rollback() }()
+
+	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock($1)`, migrationLockKey); err != nil {
+		return cherrs.New(cherrs.PersistenceFailure, "transaction.sql.migrate", "%v", err)
+	}
 
 	var applied bool
 	if err := tx.QueryRowContext(ctx,

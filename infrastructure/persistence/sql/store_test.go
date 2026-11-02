@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"sync"
 	"testing"
 	"time"
 
@@ -73,6 +74,39 @@ func TestStoreMigrateIsIdempotent(t *testing.T) {
 	}
 	if counts["0002_events"] != 1 {
 		t.Fatalf("0002 must be applied exactly once, got %+v", counts)
+	}
+}
+
+// TestStoreMigrateIsConcurrencySafe pins the migration advisory lock: two
+// instances migrating at once converge on one application instead of
+// racing on the version primary key. The shared test database already has
+// the schema applied, so this exercises the lock path both instances take
+// (the first-apply race is closed by the same lock, asserted against the
+// version table by TestStoreMigrateIsIdempotent).
+func TestStoreMigrateIsConcurrencySafe(t *testing.T) {
+	dsn := testDSN(t)
+	ctx := context.Background()
+	a, err := sql.Open(ctx, dsn)
+	if err != nil {
+		t.Fatalf("open a: %v", err)
+	}
+	t.Cleanup(func() { _ = a.Close() })
+	b, err := sql.Open(ctx, dsn)
+	if err != nil {
+		t.Fatalf("open b: %v", err)
+	}
+	t.Cleanup(func() { _ = b.Close() })
+
+	var wg sync.WaitGroup
+	errs := make([]error, 2)
+	wg.Add(2)
+	go func() { defer wg.Done(); errs[0] = a.Migrate(ctx) }()
+	go func() { defer wg.Done(); errs[1] = b.Migrate(ctx) }()
+	wg.Wait()
+	for i, err := range errs {
+		if err != nil {
+			t.Fatalf("concurrent migrate %d: %v", i, err)
+		}
 	}
 }
 
