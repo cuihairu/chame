@@ -40,6 +40,13 @@
 - [x] 补齐清单第 7 条：生产观测与成本接口（prometheus /metrics + CostRecorder / CostQuery） — 87e006f
 - [x] 补齐清单第 8 条：审批、限额与审计内控（默认关闭，WithInternalControls） — 40a1bc0
 
+## 代码深审遗留（docs/review/2026-11-01-code-review.md）
+
+- [ ] R1(P2)：EVM nonce Reconcile 同步 s.next = max(s.next, s.chainNext)，外部写入者后不再分发陈旧 nonce
+- [ ] R2(P2)：Solana blockhash 期限边界对运行时 check_hash_age 实证（开/闭区间）后统一注释与测试
+- [ ] R3(P3)：SQL applyMigration 加 pg_advisory_xact_lock，多副本并发首启不冲突
+- [ ] R4(P3)：EVM Settle 精确容忍 ErrUnknownNonce，其余错误透传或记日志
+
 ## 红线
 
 - 发布正式版本必须由用户明确给出版本号并触发
