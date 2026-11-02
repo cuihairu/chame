@@ -42,7 +42,7 @@
 
 ## 代码深审遗留（docs/review/2026-11-01-code-review.md）
 
-- [x] R1(P2)：EVM nonce Reconcile 同步 s.next = max(s.next, s.chainNext)，外部写入者后不再分发陈旧 nonce — 单 commit（hash 见交付说明），484 测试
+- [x] R1(P2)：EVM nonce Reconcile 同步 s.next = max(s.next, s.chainNext)，外部写入者后不再分发陈旧 nonce — fa6d672，484 测试
 - [ ] R2(P2)：Solana blockhash 期限边界对运行时 check_hash_age 实证（开/闭区间）后统一注释与测试
 - [ ] R3(P3)：SQL applyMigration 加 pg_advisory_xact_lock，多副本并发首启不冲突
 - [ ] R4(P3)：EVM Settle 精确容忍 ErrUnknownNonce，其余错误透传或记日志
