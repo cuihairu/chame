@@ -3,6 +3,7 @@ package evm
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math/big"
 	"time"
@@ -268,11 +269,20 @@ func (n *Network) Settle(ctx context.Context, tx txmodel.Transaction, outcome tx
 	if err != nil || rec.Nonce == nil || rec.Intent == nil {
 		return
 	}
+	// Settling is bookkeeping, not a precondition (§7.5), so exactly one
+	// error is tolerated: a claim the coordinator does not know — an
+	// intent that pinned its own nonce. Submitted and Abandon can report
+	// nothing else today; a future category surfaces on the error counter
+	// instead of vanishing behind a blanket ignore.
 	switch outcome {
 	case txmodel.SettleBroadcast:
-		_ = n.NonceCoordinator().Submitted(rec.Intent.Sender, *rec.Nonce)
+		if err := n.NonceCoordinator().Submitted(rec.Intent.Sender, *rec.Nonce); err != nil && !errors.Is(err, ErrUnknownNonce) {
+			n.stats.countError()
+		}
 	case txmodel.SettleFailed:
-		_ = n.NonceCoordinator().Abandon(rec.Intent.Sender, *rec.Nonce)
+		if err := n.NonceCoordinator().Abandon(rec.Intent.Sender, *rec.Nonce); err != nil && !errors.Is(err, ErrUnknownNonce) {
+			n.stats.countError()
+		}
 	}
 }
 

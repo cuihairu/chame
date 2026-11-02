@@ -232,6 +232,22 @@ func TestFlowSettleSpendsAndReleasesTheNonce(t *testing.T) {
 	}
 }
 
+// TestFlowSettleToleratesAnUnknownNonce pins the §7.5 tolerance: settling
+// a claim the coordinator does not know (an intent that pinned its own
+// nonce) is bookkeeping, not a precondition — it neither errors nor
+// surfaces on the error counter.
+func TestFlowSettleToleratesAnUnknownNonce(t *testing.T) {
+	n, _ := flowNetwork(t)
+	pinned := uint64(999)
+	tx := flowRecord("tx-pinned", flowIntent(t))
+	tx.ChainData = &ChainRecord{Intent: flowIntent(t), Nonce: &pinned}
+	n.Settle(context.Background(), tx, txmodel.SettleBroadcast)
+	n.Settle(context.Background(), tx, txmodel.SettleFailed)
+	if s := n.Stats(); s.Errors != 0 {
+		t.Fatalf("errors = %d, want 0 (an unknown claim is tolerated)", s.Errors)
+	}
+}
+
 // TestBuildIntentRoundTrips pins the storable intent: decimal strings
 // come back as the same wei amounts, and an unparsable string is
 // refused.
