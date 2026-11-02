@@ -7,9 +7,9 @@ import (
 )
 
 // BlockhashPin is one recent blockhash with the block height it stays
-// valid for (spec §8.4). A message built with it binds the hash; once the
-// chain's block height reaches LastValidBlockHeight the chain will no
-// longer accept a transaction carrying it. The hash is base58, the
+// valid for (spec §8.4). A message built with it binds the hash; the
+// chain still accepts a transaction carrying it at LastValidBlockHeight
+// itself and no longer after that height. The hash is base58, the
 // rendering the adapter uses everywhere else (ADR-0001: no SDK type
 // crosses the boundary). A rebuild must take a fresh pin, not reuse this
 // one.
@@ -32,10 +32,12 @@ const (
 )
 
 // Valid states where the pin stands at height. The hash is valid up to
-// LastValidBlockHeight and exclusive of it: the boundary itself is the
-// first height that rejects it.
+// and including LastValidBlockHeight (the Agave runtime accepts it while
+// its age is at most the processing age, which the RPC reports as the
+// inclusive last-valid height): the first height that rejects it is
+// LastValidBlockHeight+1.
 func (p BlockhashPin) Valid(height uint64) ExpiryState {
-	if height < p.LastValidBlockHeight {
+	if height <= p.LastValidBlockHeight {
 		return ExpiryValid
 	}
 	return ExpiryExpired

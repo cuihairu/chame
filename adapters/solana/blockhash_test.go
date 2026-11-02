@@ -73,7 +73,8 @@ func TestNetworkBlockHeight(t *testing.T) {
 }
 
 // TestBlockhashPinValidClassifiesWindow states the boundary: the pin
-// stays valid below its last valid height and expires at it.
+// stays valid through its last valid height (inclusive, matching the
+// Agave runtime's age check) and expires at the height after it.
 func TestBlockhashPinValidClassifiesWindow(t *testing.T) {
 	pin := pinFixture(100)
 	cases := []struct {
@@ -82,7 +83,7 @@ func TestBlockhashPinValidClassifiesWindow(t *testing.T) {
 	}{
 		{100, ExpiryValid},
 		{249, ExpiryValid},
-		{250, ExpiryExpired},
+		{250, ExpiryValid},
 		{251, ExpiryExpired},
 	}
 	for _, tc := range cases {
