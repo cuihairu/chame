@@ -43,9 +43,9 @@
 ## 代码深审遗留（docs/review/2026-11-01-code-review.md）
 
 - [x] R1(P2)：EVM nonce Reconcile 同步 s.next = max(s.next, s.chainNext)，外部写入者后不再分发陈旧 nonce — fa6d672，484 测试
-- [ ] R2(P2)：Solana blockhash 期限边界对运行时 check_hash_age 实证（开/闭区间）后统一注释与测试
-- [ ] R3(P3)：SQL applyMigration 加 pg_advisory_xact_lock，多副本并发首启不冲突
-- [ ] R4(P3)：EVM Settle 精确容忍 ErrUnknownNonce，其余错误透传或记日志
+- [x] R2(P2)：Solana blockhash 期限边界对运行时 check_hash_age 实证（开/闭区间）后统一注释与测试 — f986d54，486 测试（实证为闭区间：Agave runtime last_valid = height + max_age − age，age ≤ max_age 即有效）
+- [x] R3(P3)：SQL applyMigration 加 pg_advisory_xact_lock，多副本并发首启不冲突 — 49c6ace，486 测试（真实 PG 并发 Migrate 验证通过）
+- [x] R4(P3)：EVM Settle 精确容忍 ErrUnknownNonce，其余错误透传或记日志 — 03dd8a3，486 测试（不可达错误入错误计数器）
 
 ## 红线
 
