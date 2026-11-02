@@ -110,6 +110,65 @@ func TestStoreMigrateIsConcurrencySafe(t *testing.T) {
 	}
 }
 
+// TestStoreMigrateIsConcurrencySafeOnFirstStart pins the migration
+// advisory lock against the path the existing concurrency test cannot
+// reach: two instances starting on a virgin database (no schema at all).
+// Concurrent CREATE TABLE IF NOT EXISTS is not atomic in PostgreSQL, so
+// without the lock one instance fails on a duplicate catalog entry; with
+// it both converge on one application. The lock also serializes the
+// version check-and-record that TestStoreMigrateIsIdempotent pins.
+func TestStoreMigrateIsConcurrencySafeOnFirstStart(t *testing.T) {
+	dsn := testDSN(t)
+	ctx := context.Background()
+
+	// Drop every managed table so both instances observe a virgin
+	// database, exactly the first-start state the lock protects. The
+	// drop is a test-only convenience against the shared test database;
+	// Migrate rebuilds the schema on the next call.
+	setup, err := sql.Open(ctx, dsn)
+	if err != nil {
+		t.Fatalf("open setup: %v", err)
+	}
+	t.Cleanup(func() { _ = setup.Close() })
+	if _, err := setup.DB().ExecContext(ctx, `DROP TABLE IF EXISTS
+		chame_event_cursors, chame_events, chame_transactions, chame_schema_migrations`); err != nil {
+		t.Fatalf("drop tables: %v", err)
+	}
+
+	a, err := sql.Open(ctx, dsn)
+	if err != nil {
+		t.Fatalf("open a: %v", err)
+	}
+	t.Cleanup(func() { _ = a.Close() })
+	b, err := sql.Open(ctx, dsn)
+	if err != nil {
+		t.Fatalf("open b: %v", err)
+	}
+	t.Cleanup(func() { _ = b.Close() })
+
+	var wg sync.WaitGroup
+	errs := make([]error, 2)
+	wg.Add(2)
+	go func() { defer wg.Done(); errs[0] = a.Migrate(ctx) }()
+	go func() { defer wg.Done(); errs[1] = b.Migrate(ctx) }()
+	wg.Wait()
+	for i, err := range errs {
+		if err != nil {
+			t.Fatalf("concurrent first-start migrate %d: %v", i, err)
+		}
+	}
+
+	// Both instances must observe the schema applied exactly once.
+	var n int
+	if err := setup.DB().QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM chame_schema_migrations`).Scan(&n); err != nil {
+		t.Fatalf("count migrations: %v", err)
+	}
+	if n != 2 {
+		t.Fatalf("applied migrations = %d, want 2 (0001, 0002)", n)
+	}
+}
+
 func TestStoreOpenRejectsAnUnreachableDSN(t *testing.T) {
 	ctx := context.Background()
 	_, err := sql.Open(ctx, "postgres://nobody:nope@127.0.0.1:9/chame?sslmode=disable&connect_timeout=2")

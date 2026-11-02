@@ -90,8 +90,8 @@ const migrationLockKey = int64(0x6368616d65)
 // filename order, each in its own transaction. It is idempotent and safe
 // to call on every start.
 func (s *Store) Migrate(ctx context.Context) error {
-	if _, err := s.db.ExecContext(ctx, migrationTable); err != nil {
-		return cherrs.New(cherrs.PersistenceFailure, "transaction.sql.migrate", "%v", err)
+	if err := s.ensureMigrationTable(ctx); err != nil {
+		return err
 	}
 	for _, m := range migrations {
 		if err := s.applyMigration(ctx, m); err != nil {
@@ -99,6 +99,28 @@ func (s *Store) Migrate(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+// ensureMigrationTable creates the applied-version table if it is absent,
+// under the same advisory lock applyMigration takes. Concurrent
+// CREATE TABLE IF NOT EXISTS is not atomic in PostgreSQL — two replicas
+// starting on a virgin database can both enter the catalog write and one
+// fails on a duplicate type/index entry — so the create must be
+// serialized just like the version check-and-record.
+func (s *Store) ensureMigrationTable(ctx context.Context) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return cherrs.New(cherrs.PersistenceFailure, "transaction.sql.migrate", "%v", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock($1)`, migrationLockKey); err != nil {
+		return cherrs.New(cherrs.PersistenceFailure, "transaction.sql.migrate", "%v", err)
+	}
+	if _, err := tx.ExecContext(ctx, migrationTable); err != nil {
+		return cherrs.New(cherrs.PersistenceFailure, "transaction.sql.migrate", "%v", err)
+	}
+	return tx.Commit()
 }
 
 // applyMigration runs one migration inside a transaction, recorded in
