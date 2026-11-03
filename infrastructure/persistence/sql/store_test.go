@@ -16,6 +16,7 @@ import (
 	cherrs "github.com/cuihairu/chame/core/errors"
 	"github.com/cuihairu/chame/core/identifiers"
 	"github.com/cuihairu/chame/infrastructure/persistence/sql"
+	"github.com/jackc/pgx/v5"
 )
 
 // testDSN reads the PostgreSQL DSN for integration runs (ADR-0002). The
@@ -55,27 +56,30 @@ func isolatedDSN(t *testing.T, base string, ctx context.Context) (string, string
 	return isolatedDSNOptions(base, schema), schema
 }
 
-// isolatedDSNOptions appends an options query parameter pointing the
-// connection at the throwaway schema. It parses the base DSN so it works
-// whether or not the base already carries a query string (a bare
-// postgres://host/db must not be concatenated with "&", which would fold
-// the options into the database name).
+// isolatedDSNOptions appends an options parameter pointing the connection
+// at the throwaway schema. It parses the base DSN so it works whether or
+// not the base already carries a query string (a bare postgres://host/db
+// must not be concatenated with "&", which would fold the options into the
+// database name).
 func isolatedDSNOptions(base, schema string) string {
-	options := url.QueryEscape("-c search_path=" + schema)
-	options = strings.ReplaceAll(options, "+", "%20")
+	options := "-c search_path=" + schema
 	u, err := url.Parse(base)
 	if err != nil || u.Scheme == "" {
-		// Fall back to the historical concatenation for DSNs net/url
-		// cannot model; the base is already validated by the caller.
-		if strings.Contains(base, "?") {
-			return base + "&options=" + options
-		}
-		return base + "?options=" + options
+		// net/url cannot model a pgx keyword/value conninfo (no scheme),
+		// and pgx splits such DSNs on whitespace only: '?' and '&' are
+		// ordinary characters, so a URL query string would fold into the
+		// preceding token (the database name) and isolation would silently
+		// be lost. Append an options keyword with a single-quoted value
+		// instead; pgx unquotes it back into RuntimeParams["options"].
+		quoted := strings.ReplaceAll(options, "'", "''")
+		return base + " options='" + quoted + "'"
 	}
+	escaped := url.QueryEscape(options)
+	escaped = strings.ReplaceAll(escaped, "+", "%20")
 	if u.RawQuery == "" {
-		u.RawQuery = "options=" + options
+		u.RawQuery = "options=" + escaped
 	} else {
-		u.RawQuery = u.RawQuery + "&options=" + options
+		u.RawQuery = u.RawQuery + "&options=" + escaped
 	}
 	return u.String()
 }
@@ -222,15 +226,18 @@ func TestStoreMigrateIsConcurrencySafeOnFirstStart(t *testing.T) {
 	}
 }
 
-// TestIsolatedDSNOptions pins the DSN building against both a base that
-// already carries a query string and a bare postgres:// URL: the options
-// must land in the query string, never be folded into the database name.
+// TestIsolatedDSNOptions pins the DSN building against a base that already
+// carries a query string, a bare postgres:// URL, and a pgx keyword/value
+// conninfo: the options must land in the query string (URL form) or as a
+// quoted options keyword (conninfo form), never be folded into the database
+// name, and must survive a pgx.ParseConfig round-trip.
 func TestIsolatedDSNOptions(t *testing.T) {
 	const schema = "chame_sql_test_probe"
 	cases := []struct {
 		name string
 		base string
 		want string
+		kv   bool // keyword/value (conninfo) form, not a URL
 	}{
 		{
 			name: "with existing query string",
@@ -242,12 +249,31 @@ func TestIsolatedDSNOptions(t *testing.T) {
 			base: "postgres://user:pw@localhost:5432/db",
 			want: "postgres://user:pw@localhost:5432/db?options=-c%20search_path%3Dchame_sql_test_probe",
 		},
+		{
+			name: "keyword value conninfo",
+			base: "host=localhost user=foo dbname=bar sslmode=disable",
+			want: "host=localhost user=foo dbname=bar sslmode=disable options='-c search_path=chame_sql_test_probe'",
+			kv:   true,
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			got := isolatedDSNOptions(tc.base, schema)
 			if got != tc.want {
 				t.Fatalf("isolatedDSNOptions(%q) = %q, want %q", tc.base, got, tc.want)
+			}
+			if tc.kv {
+				cfg, err := pgx.ParseConfig(got)
+				if err != nil {
+					t.Fatalf("pgx.ParseConfig(%q): %v", got, err)
+				}
+				if cfg.Database != "bar" {
+					t.Fatalf("database = %q, want bar", cfg.Database)
+				}
+				if cfg.RuntimeParams["options"] != "-c search_path="+schema {
+					t.Fatalf("options = %q, want %q", cfg.RuntimeParams["options"], "-c search_path="+schema)
+				}
+				return
 			}
 			// The result must remain a parseable URL with the database
 			// name intact and the options in the query string.
