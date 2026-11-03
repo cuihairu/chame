@@ -4,7 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"net/url"
 	"os"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -25,6 +28,29 @@ func testDSN(t *testing.T) string {
 		t.Skip("set CHAME_TEST_PG_DSN to run the PostgreSQL suite")
 	}
 	return dsn
+}
+
+// isolatedDSN creates a fresh throwaway schema on the test database and
+// returns a DSN pointed at it, so a destructive setup never touches
+// tables another suite shares. The caller drops the schema when the test
+// ends.
+func isolatedDSN(t *testing.T, base string, ctx context.Context) (string, string) {
+	t.Helper()
+	schema := fmt.Sprintf("chame_sql_test_%d", time.Now().UnixNano())
+	// Create the schema through the base DSN first: a search_path that
+	// names a schema which does not exist yet is rejected by PostgreSQL.
+	bootstrap, err := sql.Open(ctx, base)
+	if err != nil {
+		t.Fatalf("open bootstrap: %v", err)
+	}
+	defer func() { _ = bootstrap.Close() }()
+	if _, err := bootstrap.DB().ExecContext(ctx,
+		`CREATE SCHEMA `+schema+` AUTHORIZATION CURRENT_USER`); err != nil {
+		t.Fatalf("create schema: %v", err)
+	}
+	options := url.QueryEscape("-c search_path=" + schema)
+	options = strings.ReplaceAll(options, "+", "%20")
+	return base + "&options=" + options, schema
 }
 
 // reset removes every record so runs stay repeatable against a shared
@@ -118,22 +144,21 @@ func TestStoreMigrateIsConcurrencySafe(t *testing.T) {
 // it both converge on one application. The lock also serializes the
 // version check-and-record that TestStoreMigrateIsIdempotent pins.
 func TestStoreMigrateIsConcurrencySafeOnFirstStart(t *testing.T) {
-	dsn := testDSN(t)
+	base := testDSN(t)
 	ctx := context.Background()
+	dsn, schema := isolatedDSN(t, base, ctx)
 
-	// Drop every managed table so both instances observe a virgin
-	// database, exactly the first-start state the lock protects. The
-	// drop is a test-only convenience against the shared test database;
-	// Migrate rebuilds the schema on the next call.
+	// The throwaway schema starts empty: both instances observe a virgin
+	// database, exactly the first-start state the lock protects. Other
+	// suites sharing the test database are never touched.
 	setup, err := sql.Open(ctx, dsn)
 	if err != nil {
 		t.Fatalf("open setup: %v", err)
 	}
-	t.Cleanup(func() { _ = setup.Close() })
-	if _, err := setup.DB().ExecContext(ctx, `DROP TABLE IF EXISTS
-		chame_event_cursors, chame_events, chame_transactions, chame_schema_migrations`); err != nil {
-		t.Fatalf("drop tables: %v", err)
-	}
+	t.Cleanup(func() {
+		_, _ = setup.DB().ExecContext(ctx, `DROP SCHEMA IF EXISTS `+schema+` CASCADE`)
+		_ = setup.Close()
+	})
 
 	a, err := sql.Open(ctx, dsn)
 	if err != nil {
@@ -164,8 +189,9 @@ func TestStoreMigrateIsConcurrencySafeOnFirstStart(t *testing.T) {
 		`SELECT COUNT(*) FROM chame_schema_migrations`).Scan(&n); err != nil {
 		t.Fatalf("count migrations: %v", err)
 	}
-	if n != 2 {
-		t.Fatalf("applied migrations = %d, want 2 (0001, 0002)", n)
+	want := sql.MigrationCount()
+	if n != want {
+		t.Fatalf("applied migrations = %d, want %d", n, want)
 	}
 }
 

@@ -23,6 +23,11 @@ type migration struct {
 // error caught at first use.
 var migrations = loadMigrations()
 
+// MigrationCount reports the number of embedded schema steps. Exported
+// so integration tests can assert the full set applied without pinning
+// the version list.
+func MigrationCount() int { return len(migrations) }
+
 func loadMigrations() []migration {
 	entries, err := schemaFS.ReadDir("schema")
 	if err != nil {

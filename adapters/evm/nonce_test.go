@@ -375,6 +375,23 @@ func TestNonceReconcileRetiresConsumedLeases(t *testing.T) {
 	if len(report.Consumed) != 0 {
 		t.Fatalf("second consumed = %v, want no unbounded repeat", report.Consumed)
 	}
+
+	// The chain consumed 7, so the retired lease must never re-enter the
+	// free pool: an abandon or a late submission is refused, and the next
+	// allocation skips straight past the consumed nonce.
+	if err := c.Submitted(nonceAddr, seven); !errors.Is(err, ErrUnknownNonce) {
+		t.Errorf("Submitted after consumed reconcile: err = %v, want unknown nonce", err)
+	}
+	if err := c.Abandon(nonceAddr, seven); !errors.Is(err, ErrUnknownNonce) {
+		t.Errorf("Abandon after consumed reconcile: err = %v, want unknown nonce", err)
+	}
+	next, err := c.Next(context.Background(), nonceAddr)
+	if err != nil {
+		t.Fatalf("Next after consumed reconcile: %v", err)
+	}
+	if next != 9 {
+		t.Errorf("nonce after consumed reconcile = %d, want 9 (consumed nonce never reused)", next)
+	}
 }
 
 func TestNonceReconcileNeverRegresses(t *testing.T) {
