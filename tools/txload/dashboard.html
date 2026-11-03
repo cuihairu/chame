@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>chame txload</title>
+<style>
+:root{
+  --bg:#0d1117;--panel:#161b22;--border:#30363d;--fg:#c9d1d9;--dim:#8b949e;
+  --ok:#3fb950;--warn:#d29922;--bad:#f85149;--accent:#58a6ff;--purple:#bc8cff;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--fg);font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;padding:16px}
+h1{font-size:16px;margin-bottom:2px}
+.sub{color:var(--dim);margin-bottom:14px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:12px}
+.panel{background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:12px}
+.panel h2{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--dim);margin-bottom:8px}
+.big{display:flex;gap:14px;flex-wrap:wrap}
+.stat{text-align:left}
+.stat .v{font-size:22px;font-weight:600}
+.stat .l{color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.06em}
+.ok{color:var(--ok)}.warn{color:var(--warn)}.bad{color:var(--bad)}.accent{color:var(--accent)}.purple{color:var(--purple)}
+table{width:100%;border-collapse:collapse;margin-top:6px}
+th,td{text-align:left;padding:4px 6px;border-bottom:1px solid var(--border)}
+th{color:var(--dim);font-weight:400;font-size:11px;text-transform:uppercase}
+.dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;background:var(--bad)}
+.dot.up{background:var(--ok)}
+canvas{width:100%;height:140px;display:block;background:#0a0d12;border:1px solid var(--border);border-radius:4px}
+.bar-row{display:flex;align-items:center;gap:8px;margin:3px 0}
+.bar-name{width:90px;color:var(--dim)}
+.bar-track{flex:1;background:#0a0d12;border-radius:3px;height:16px;position:relative;overflow:hidden}
+.bar-fill{height:100%;background:var(--accent)}
+.bar-val{width:70px;text-align:right}
+.kv{color:var(--dim)}
+.faults label{display:flex;align-items:center;gap:8px;margin:3px 0}
+.faults input[type=number]{width:80px;background:#0a0d12;color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:2px 6px}
+button{background:#21262d;color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:3px 10px;cursor:pointer;font:inherit}
+button:hover{background:#30363d}
+.legend{display:flex;gap:12px;color:var(--dim);font-size:11px;margin-top:4px}
+.sw{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:4px}
+#epoch{color:var(--dim);font-size:11px;margin-top:10px}
+</style>
+</head>
+<body>
+<h1>chame · txload</h1>
+<div class="sub">transaction load driver — data source: <span class="accent">/metrics</span> · config &amp; faults: <span class="accent">/api/state</span></div>
+
+<div class="grid">
+  <div class="panel">
+    <h2>Run</h2>
+    <div class="big">
+      <div class="stat"><div class="v accent" id="sent">–</div><div class="l">sent</div></div>
+      <div class="stat"><div class="v ok" id="succeeded">–</div><div class="l">included</div></div>
+      <div class="stat"><div class="v purple" id="reverted">–</div><div class="l">reverted</div></div>
+      <div class="stat"><div class="v bad" id="failed">–</div><div class="l">failed</div></div>
+      <div class="stat"><div class="v warn" id="timedout">–</div><div class="l">timeouts</div></div>
+      <div class="stat"><div class="v warn" id="submitfails">–</div><div class="l">submit fails</div></div>
+      <div class="stat"><div class="v" id="inflight">–</div><div class="l">in flight</div></div>
+    </div>
+    <div id="epoch">–</div>
+    <div class="legend">
+      <span><span class="sw" style="background:var(--ok)"></span>included</span>
+      <span><span class="sw" style="background:var(--purple)"></span>reverted</span>
+      <span><span class="sw" style="background:var(--bad)"></span>failed</span>
+      <span><span class="sw" style="background:var(--warn)"></span>undecided</span>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Latency percentiles <span class="kv">(s, from /metrics histograms)</span></h2>
+    <table id="lat">
+      <tr><th>kind</th><th>p50</th><th>p90</th><th>p99</th><th>count</th></tr>
+    </table>
+    <div class="legend">submit = created→submitted · e2e = created→included (txload_transaction_duration_seconds / txload_submit_duration_seconds)</div>
+  </div>
+
+  <div class="panel" style="grid-column:1/-1">
+    <h2>TPS <span class="kv">(transactions_submitted_total rate, 1s samples)</span></h2>
+    <canvas id="tps" height="140"></canvas>
+    <div class="legend"><span id="tps-now">–</span></div>
+  </div>
+
+  <div class="panel">
+    <h2>State machine distribution <span class="kv">(transaction_state)</span></h2>
+    <div id="states"></div>
+  </div>
+
+  <div class="panel">
+    <h2>Endpoint health matrix <span class="kv">(endpoint_health)</span></h2>
+    <table id="eps"><tr><th>endpoint</th><th>health</th><th>chain_id p50</th><th>probes</th></tr></table>
+    <div class="legend">failovers: <span id="failovers" class="warn">–</span> (endpoint_failovers_total)</div>
+  </div>
+
+  <div class="panel faults">
+    <h2>Failure injection <span class="kv">(self-hosted mock endpoints)</span></h2>
+    <div id="fault-panel" class="kv">no self-hosted endpoints</div>
+  </div>
+</div>
+
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+const history = [];            // {t, submittedTotal}
+let prevState = {};
+let lastState = {};
+
+function parseMetrics(text){
+  // Minimal Prometheus text-format 0.0.4 parser: name{labels} value
+  const series = {};
+  const re = /^([a-zA-Z_:][a-zA-Z0-9_:]*)(\{[^}]*\})?\s+([^\s]+)$/;
+  for (const line of text.split("\n")) {
+    if (!line || line[0] === "#") continue;
+    const m = re.exec(line.trim());
+    if (!m) continue;
+    const labels = {};
+    if (m[2]) {
+      for (const part of m[2].slice(1,-1).split(",")) {
+        if (!part) continue;
+        const i = part.indexOf("=");
+        const k = part.slice(0,i).trim();
+        let v = part.slice(i+1).trim();
+        if (v[0] === '"') v = v.slice(1,-1).replace(/\\"/g,'"').replace(/\\\\/g,"\\");
+        labels[k] = v;
+      }
+    }
+    series[m[1]] = (series[m[1]] || []).push && series[m[1]] || [];
+    series[m[1]].push({labels, value: parseFloat(m[3])});
+  }
+  return series;
+}
+function find(series, name, match){
+  const rows = series[name] || [];
+  const hit = rows.find(r => Object.entries(match||{}).every(([k,v]) => r.labels[k] === v));
+  return hit ? hit.value : undefined;
+}
+function byLabel(series, name, label){
+  const out = {};
+  for (const r of (series[name]||[])) out[r.labels[label]||""] = r.value;
+  return out;
+}
+// Quantile estimate from cumulative histogram buckets.
+function quantile(series, name, match, q){
+  const rows = (series[name+"_bucket"]||[]).filter(r =>
+    Object.entries(match||{}).every(([k,v]) => k==="le" || r.labels[k]===v));
+  const count = find(series, name+"_count", match);
+  if (count === undefined || count === 0) return null;
+  const pts = [];
+  for (const r of rows) {
+    const le = r.labels.le;
+    if (le !== undefined) pts.push([le === "+Inf" ? Infinity : parseFloat(le), r.value]);
+  }
+  pts.sort((a,b)=>a[0]-b[0]);
+  const target = q * count;
+  let prevLe = 0, prevC = 0;
+  for (const [le, c] of pts) {
+    if (c >= target) {
+      if (!isFinite(le)) return prevLe;
+      return prevLe + (le - prevLe) * (target - prevC) / Math.max(1, c - prevC);
+    }
+    prevLe = le; prevC = c;
+  }
+  return null;
+}
+const fmt = (v,d=3) => v===null||v===undefined ? "–" : v.toFixed(d);
+
+async function fetchJSON(url){ const r = await fetch(url); return r.json(); }
+
+function drawTPS(){
+  const c = $("tps");
+  const dpr = window.devicePixelRatio || 1;
+  const w = c.clientWidth, h = 140;
+  c.width = w*dpr; c.height = h*dpr;
+  const g = c.getContext("2d");
+  g.scale(dpr,dpr);
+  g.clearRect(0,0,w,h);
+  if (history.length < 2) return;
+  const maxT = Math.max(1, ...history.map(p=>p.tps));
+  g.strokeStyle = "#58a6ff"; g.lineWidth = 1.5; g.beginPath();
+  history.forEach((p,i)=>{
+    const x = 8 + (w-16) * i/(history.length-1);
+    const y = h-10 - (h-24) * p.tps/maxT;
+    i ? g.lineTo(x,y) : g.moveTo(x,y);
+  });
+  g.stroke();
+  g.strokeStyle = "#30363d"; g.strokeRect(0.5,0.5,w-1,h-1);
+  g.fillStyle = "#8b949e"; g.font = "10px monospace";
+  g.fillText(maxT.toFixed(1)+" tps max", 10, 14);
+}
+
+async function tick(){
+  let series = {};
+  try { series = parseMetrics(await (await fetch("/metrics")).text()); } catch {}
+  let state = null;
+  try { state = await fetchJSON("/api/state"); } catch {}
+
+  // TPS curve from the submitted counter.
+  const sub = find(series, "transactions_submitted_total", null) ??
+              (series["transactions_submitted_total"]||[]).reduce((a,r)=>a+r.value,0);
+  const now = Date.now();
+  if (sub !== undefined && history.length) {
+    const prev = history[history.length-1];
+    const dt = (now - prev.t)/1000;
+    if (dt > 0.2) history.push({t: now, tps: Math.max(0, (sub - prev.v)/dt), v: sub, raw: 0});
+    else return;
+  } else {
+    history.push({t: now, tps: 0, v: sub||0});
+  }
+  while (history.length > 180) history.shift();
+  if (history.length > 1) {
+    const p = history[history.length-1], q = history[history.length-2];
+    const dt = (p.t-q.t)/1000;
+    $("tps-now").textContent = dt>0 ? ((p.v-q.v)/dt).toFixed(1)+" tps (current, target "+(state?state.tps_target:"–")+")" : "–";
+  }
+  drawTPS();
+
+  if (state) {
+    $("sent").textContent = state.sent;
+    $("succeeded").textContent = state.succeeded;
+    $("reverted").textContent = state.reverted;
+    $("failed").textContent = state.failed;
+    $("timedout").textContent = state.timed_out;
+    $("submitfails").textContent = state.submit_fails;
+    $("inflight").textContent = state.inflight;
+    $("epoch").textContent =
+      `network ${state.network} · chain ${state.chain_id} · tps ${state.tps_target}` +
+      (state.ramp_seconds ? ` · ramp ${state.ramp_seconds}s` : "") +
+      ` · uptime ${state.uptime_seconds.toFixed(0)}s`;
+    renderFaults(state);
+  }
+
+  // State machine distribution bars.
+  const states = byLabel(series, "transaction_state", "state");
+  const order = ["created","prepared","signed","submitted","pending","included","confirmed","finalized","reverted","failed","unknown","reorged"];
+  const total = Object.values(states).reduce((a,b)=>a+b,0);
+  const max = Math.max(1, ...Object.values(states));
+  const colors = {included:"var(--ok)", finalized:"var(--ok)", confirmed:"var(--ok)",
+                  reverted:"var(--purple)", failed:"var(--bad)",
+                  unknown:"var(--warn)", reorged:"var(--warn)", submitted:"var(--accent)"};
+  $("states").innerHTML = order.filter(s=>states[s]!==undefined).map(s=>{
+    const v = states[s];
+    return `<div class="bar-row"><span class="bar-name">${s}</span>`+
+      `<div class="bar-track"><div class="bar-fill" style="width:${(100*v/max).toFixed(1)}%;background:${colors[s]||"var(--accent)"}"></div></div>`+
+      `<span class="bar-val">${v}${total?` (${(100*v/total).toFixed(1)}%)`:""}</span></div>`;
+  }).join("") || '<span class="kv">no records yet</span>';
+
+  // Latency percentiles.
+  const rows = [
+    ["submit", "txload_submit_duration_seconds", {}],
+    ["e2e", "txload_transaction_duration_seconds", {}],
+  ];
+  $("lat").innerHTML = "<tr><th>kind</th><th>p50</th><th>p90</th><th>p99</th><th>count</th></tr>" +
+    rows.map(([name, metric, match]) => {
+      const count = find(series, metric+"_count", match);
+      return `<tr><td>${name}</td><td>${fmt(quantile(series,metric,match,0.5))}</td>`+
+        `<td>${fmt(quantile(series,metric,match,0.9))}</td><td>${fmt(quantile(series,metric,match,0.99))}</td>`+
+        `<td>${count===undefined?"–":count}</td></tr>`;
+    }).join("");
+
+  // Endpoint matrix.
+  const health = byLabel(series, "endpoint_health", "endpoint");
+  const probes = {};
+  for (const r of (series["rpc_requests_total"]||[]))
+    if (r.labels.endpoint) probes[r.labels.endpoint] = (probes[r.labels.endpoint]||0) + r.value;
+  const chainLat = {};
+  for (const r of (series["rpc_request_duration_seconds_count"]||[]))
+    if (r.labels.endpoint) chainLat[r.labels.endpoint] = quantile(series, "rpc_request_duration_seconds", {endpoint:r.labels.endpoint}, 0.5);
+  $("eps").innerHTML = "<tr><th>endpoint</th><th>health</th><th>chain_id p50</th><th>probes</th></tr>" +
+    Object.keys(health).map(u =>
+      `<tr><td class="u-wrap">${u}</td>`+
+      `<td><span class="dot ${health[u]>0?"up":""}"></span>${health[u]>0?"up":"down"}</td>`+
+      `<td>${fmt(chainLat[u])}</td><td>${probes[u]!==undefined?probes[u]:"–"}</td></tr>`).join("");
+  const fo = (series["endpoint_failovers_total"]||[]).reduce((a,r)=>a+r.value,0);
+  $("failovers").textContent = fo || 0;
+}
+
+function renderFaults(state){
+  if (!state.endpoints || !state.fault_editable) {
+    $("fault-panel").textContent = "no self-hosted endpoints";
+    return;
+  }
+  $("fault-panel").innerHTML = state.endpoints.map((ep,i)=>{
+    if (!ep.faults) return `<div><span class="kv">external:</span> ${ep.url}</div>`;
+    const f = ep.faults;
+    return `<div style="border-top:1px solid var(--border);padding-top:6px;margin-top:6px">
+      <div class="u-wrap accent">${ep.url}</div>
+      <label><input type="checkbox" id="down-${i}" ${f.down?"checked":""}> down</label>
+      <label>error_rate <input type="number" step="0.05" min="0" max="1" id="err-${i}" value="${f.error_rate}"></label>
+      <label>drop_rate <input type="number" step="0.05" min="0" max="1" id="drop-${i}" value="${f.drop_rate}"></label>
+      <label>revert_rate <input type="number" step="0.05" min="0" max="1" id="rev-${i}" value="${f.revert_rate}"></label>
+      <label>latency_ms <input type="number" step="10" min="0" id="lat-${i}" value="${f.latency_ms}"></label>
+      <button id="apply-${i}">apply</button>
+    </div>`;
+  }).join("");
+  state.endpoints.forEach((ep,i)=>{
+    const btn = $("apply-"+i);
+    if (!btn || !ep.faults) return;
+    btn.onclick = async ()=>{
+      const body = {
+        endpoint: ep.url,
+        down: $("down-"+i).checked,
+        error_rate: parseFloat($("err-"+i).value)||0,
+        drop_rate: parseFloat($("drop-"+i).value)||0,
+        revert_rate: parseFloat($("rev-"+i).value)||0,
+        latency_ms: parseInt($("lat-"+i).value)||0,
+      };
+      try {
+        await fetch("/api/faults", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(body)});
+      } catch {}
+    };
+  });
+}
+
+tick();
+setInterval(tick, 1000);
+</script>
+</body>
+</html>

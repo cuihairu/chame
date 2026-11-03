@@ -123,9 +123,20 @@ func classify(op, network string, err error) error {
 	if errors.Is(err, syscall.ECONNREFUSED) {
 		return of(cherrs.NetworkUnavailable, op, network, err)
 	}
-	var httpErr *rpc.HTTPError
-	if errors.As(err, &httpErr) {
-		switch httpErr.StatusCode {
+	// go-ethereum serves HTTP-level errors as value-typed rpc.HTTPError,
+	// while older call sites and tests wrap pointers: match both, or a
+	// plain 503 outage classifies as internal_error and never fails
+	// over (spec §7.4).
+	var httpErr rpc.HTTPError
+	var httpErrPtr *rpc.HTTPError
+	statusCode := 0
+	if errors.As(err, &httpErr) || (errors.As(err, &httpErrPtr) && httpErrPtr != nil) {
+		if errors.As(err, &httpErr) {
+			statusCode = httpErr.StatusCode
+		} else {
+			statusCode = httpErrPtr.StatusCode
+		}
+		switch statusCode {
 		case 429:
 			return of(cherrs.RateLimited, op, network, err)
 		case 401:
