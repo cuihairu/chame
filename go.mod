@@ -2,6 +2,8 @@ module github.com/cuihairu/chame
 
 go 1.26.0
 
+toolchain go1.27.3
+
 require (
 	github.com/ethereum/go-ethereum v1.17.8
 	github.com/gagliardetto/solana-go v1.25.0
