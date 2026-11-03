@@ -81,6 +81,6 @@
 
 ## 漏洞扫描遗留（2026-11-03 全舰队扫描，源 scratch/vuln-scan-*.md）
 
-- [ ] VULN-CHAME-001 [高危·stdlib×10·GO-2026-6809 等] go toolchain go1.27.1→go1.27.3【需改 go.mod】：2026-11-03 晚实测 govulncheck ./... = affected by 10 vulnerabilities from the Go standard library（另 2 条 import 级、3 条 module 级未调用）；chame/go.mod 无 toolchain 指令，补 `toolchain go1.27.3`（同 herald/cockpit/servify/atlas 做法）；验收：govulncheck ./... 显示 No vulnerabilities found + go build ./... && go test ./... 绿
+- [x] VULN-CHAME-001 [高危·stdlib×10·GO-2026-6809 等] go toolchain go1.27.1→go1.27.3【需改 go.mod】：2026-11-03 晚实测 govulncheck ./... = affected by 10 vulnerabilities from the Go standard library（另 2 条 import 级、3 条 module 级未调用）；chame/go.mod 无 toolchain 指令，补 `toolchain go1.27.3`（同 herald/cockpit/servify/atlas 做法）；验收：govulncheck ./... 显示 No vulnerabilities found + go build ./... && go test ./... 绿 — 证据：go.mod:5 `toolchain go1.27.3`；`govulncheck ./...` = No vulnerabilities found / 0 affected；`go build ./...` OK；`go test ./...` 全包 ok（tools/txload 12.060s，共约 490 测试）
 - [ ] VULN-CHAME-002 [非安全·过时依赖] go get -u ./... 因 proxy EOF 部分失败（仅安全项保留）：补跑非安全升级；验收：go list -m -u all 无网络错误 + go build ./... && go test ./... 绿
 - [ ] VULN-CHAME-003 [高危·GHSA-587h-7wmj-h5pm 路径穿越] vite ≤6.4.3→≥6.4.4（chame/docs，package-lock.json 仓，终扫 1，vite≤6.4.3 受影响）【BLOCKED·规范禁 npm 改 lock】npm-lock 仓只审计未改动；验收：迁 pnpm（pnpm import）后 pnpm audit --audit-level=high 该包不再命中（或编排者批准 npm 侧修复后 npm audit 清零）；该仓无 test 脚本，audit-only
