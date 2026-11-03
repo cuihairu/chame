@@ -37,8 +37,12 @@ func testDSN(t *testing.T) string {
 func isolatedDSN(t *testing.T, base string, ctx context.Context) (string, string) {
 	t.Helper()
 	schema := fmt.Sprintf("chame_sql_test_%d", time.Now().UnixNano())
-	// Create the schema through the base DSN first: a search_path that
-	// names a schema which does not exist yet is rejected by PostgreSQL.
+	// Create the schema through the base DSN first. PostgreSQL accepts a
+	// search_path that names a schema which does not exist yet (the GUC
+	// is set and the connection succeeds), but an unqualified CREATE then
+	// fails with "no schema has been selected to create in"; creating the
+	// schema ahead of time lets the isolated connection's unqualified
+	// CREATE/DELETE statements resolve into the target schema.
 	bootstrap, err := sql.Open(ctx, base)
 	if err != nil {
 		t.Fatalf("open bootstrap: %v", err)
@@ -48,9 +52,32 @@ func isolatedDSN(t *testing.T, base string, ctx context.Context) (string, string
 		`CREATE SCHEMA `+schema+` AUTHORIZATION CURRENT_USER`); err != nil {
 		t.Fatalf("create schema: %v", err)
 	}
+	return isolatedDSNOptions(base, schema), schema
+}
+
+// isolatedDSNOptions appends an options query parameter pointing the
+// connection at the throwaway schema. It parses the base DSN so it works
+// whether or not the base already carries a query string (a bare
+// postgres://host/db must not be concatenated with "&", which would fold
+// the options into the database name).
+func isolatedDSNOptions(base, schema string) string {
 	options := url.QueryEscape("-c search_path=" + schema)
 	options = strings.ReplaceAll(options, "+", "%20")
-	return base + "&options=" + options, schema
+	u, err := url.Parse(base)
+	if err != nil || u.Scheme == "" {
+		// Fall back to the historical concatenation for DSNs net/url
+		// cannot model; the base is already validated by the caller.
+		if strings.Contains(base, "?") {
+			return base + "&options=" + options
+		}
+		return base + "?options=" + options
+	}
+	if u.RawQuery == "" {
+		u.RawQuery = "options=" + options
+	} else {
+		u.RawQuery = u.RawQuery + "&options=" + options
+	}
+	return u.String()
 }
 
 // reset removes every record so runs stay repeatable against a shared
@@ -192,6 +219,49 @@ func TestStoreMigrateIsConcurrencySafeOnFirstStart(t *testing.T) {
 	want := sql.MigrationCount()
 	if n != want {
 		t.Fatalf("applied migrations = %d, want %d", n, want)
+	}
+}
+
+// TestIsolatedDSNOptions pins the DSN building against both a base that
+// already carries a query string and a bare postgres:// URL: the options
+// must land in the query string, never be folded into the database name.
+func TestIsolatedDSNOptions(t *testing.T) {
+	const schema = "chame_sql_test_probe"
+	cases := []struct {
+		name string
+		base string
+		want string
+	}{
+		{
+			name: "with existing query string",
+			base: "postgres://user:pw@localhost:5432/db?sslmode=disable",
+			want: "postgres://user:pw@localhost:5432/db?sslmode=disable&options=-c%20search_path%3Dchame_sql_test_probe",
+		},
+		{
+			name: "bare postgres URL",
+			base: "postgres://user:pw@localhost:5432/db",
+			want: "postgres://user:pw@localhost:5432/db?options=-c%20search_path%3Dchame_sql_test_probe",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := isolatedDSNOptions(tc.base, schema)
+			if got != tc.want {
+				t.Fatalf("isolatedDSNOptions(%q) = %q, want %q", tc.base, got, tc.want)
+			}
+			// The result must remain a parseable URL with the database
+			// name intact and the options in the query string.
+			u, err := url.Parse(got)
+			if err != nil {
+				t.Fatalf("parse %q: %v", got, err)
+			}
+			if u.Path != "/db" {
+				t.Fatalf("database path = %q, want /db", u.Path)
+			}
+			if u.Query().Get("options") == "" {
+				t.Fatalf("options missing from query string of %q", got)
+			}
+		})
 	}
 }
 
