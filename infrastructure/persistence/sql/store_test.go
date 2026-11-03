@@ -70,8 +70,11 @@ func isolatedDSNOptions(base, schema string) string {
 		// ordinary characters, so a URL query string would fold into the
 		// preceding token (the database name) and isolation would silently
 		// be lost. Append an options keyword with a single-quoted value
-		// instead; pgx unquotes it back into RuntimeParams["options"].
-		quoted := strings.ReplaceAll(options, "'", "''")
+		// instead; pgx unquotes it back into RuntimeParams["options"]. The
+		// value is quoted with a single quote and embedded quotes are
+		// escaped with a backslash, which is the only escape pgx's quoted
+		// keyword/value parser recognizes (a doubled quote '' is an error).
+		quoted := strings.ReplaceAll(options, "'", `\'`)
 		return base + " options='" + quoted + "'"
 	}
 	escaped := url.QueryEscape(options)
@@ -255,6 +258,17 @@ func TestIsolatedDSNOptions(t *testing.T) {
 			want: "host=localhost user=foo dbname=bar sslmode=disable options='-c search_path=chame_sql_test_probe'",
 			kv:   true,
 		},
+		{
+			name: "keyword value conninfo with existing options",
+			base: "host=localhost user=foo dbname=bar options='-c search_path=base'",
+			want: "host=localhost user=foo dbname=bar options='-c search_path=base' options='-c search_path=chame_sql_test_probe'",
+			kv:   true,
+		},
+		{
+			name: "URL with existing options",
+			base: "postgres://user:pw@localhost:5432/db?options=-c%20search_path%3Dbase",
+			want: "postgres://user:pw@localhost:5432/db?options=-c%20search_path%3Dbase&options=-c%20search_path%3Dchame_sql_test_probe",
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -262,32 +276,39 @@ func TestIsolatedDSNOptions(t *testing.T) {
 			if got != tc.want {
 				t.Fatalf("isolatedDSNOptions(%q) = %q, want %q", tc.base, got, tc.want)
 			}
-			if tc.kv {
-				cfg, err := pgx.ParseConfig(got)
-				if err != nil {
-					t.Fatalf("pgx.ParseConfig(%q): %v", got, err)
-				}
-				if cfg.Database != "bar" {
-					t.Fatalf("database = %q, want bar", cfg.Database)
-				}
-				if cfg.RuntimeParams["options"] != "-c search_path="+schema {
-					t.Fatalf("options = %q, want %q", cfg.RuntimeParams["options"], "-c search_path="+schema)
-				}
-				return
-			}
-			// The result must remain a parseable URL with the database
-			// name intact and the options in the query string.
-			u, err := url.Parse(got)
+			// Every form is consumed by pgx: the URL branch goes through
+			// pgx stdlib (sql.Open -> pgconn.ParseConfig), so assert the
+			// exact RuntimeParams["options"] after a ParseConfig round-trip
+			// rather than only a net/url shape check. pgx's URL query parsing
+			// is last-wins for a repeated key, so the appended options (the
+			// isolation search_path) must win over any base options value.
+			cfg, err := pgx.ParseConfig(got)
 			if err != nil {
-				t.Fatalf("parse %q: %v", got, err)
+				t.Fatalf("pgx.ParseConfig(%q): %v", got, err)
 			}
-			if u.Path != "/db" {
-				t.Fatalf("database path = %q, want /db", u.Path)
+			if cfg.Database != "db" && cfg.Database != "bar" {
+				t.Fatalf("database = %q, want db or bar", cfg.Database)
 			}
-			if u.Query().Get("options") == "" {
-				t.Fatalf("options missing from query string of %q", got)
+			if cfg.RuntimeParams["options"] != "-c search_path="+schema {
+				t.Fatalf("options = %q, want %q", cfg.RuntimeParams["options"], "-c search_path="+schema)
 			}
 		})
+	}
+}
+
+// TestIsolatedDSNOptionsEscapesQuote pins the keyword/value escaping
+// against a schema containing a single quote: pgx's quoted-value parser
+// only honors a backslash escape, so a doubled quote would make the DSN
+// unparseable. This is the path the reviewer flagged as untested.
+func TestIsolatedDSNOptionsEscapesQuote(t *testing.T) {
+	const schema = "chame_sql_test_'probe"
+	got := isolatedDSNOptions("host=localhost dbname=bar", schema)
+	cfg, err := pgx.ParseConfig(got)
+	if err != nil {
+		t.Fatalf("pgx.ParseConfig(%q): %v", got, err)
+	}
+	if cfg.RuntimeParams["options"] != "-c search_path="+schema {
+		t.Fatalf("options = %q, want %q", cfg.RuntimeParams["options"], "-c search_path="+schema)
 	}
 }
 
