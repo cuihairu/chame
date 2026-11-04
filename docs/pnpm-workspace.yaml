@@ -2,5 +2,9 @@ packages:
   - '.'
 overrides:
   vite: 6.4.5
+# pnpm 12 blocks every dependency build script unless it is explicitly
+# allowed here. Add any new dependency with a postinstall/build script
+# (e.g. a future vitepress transitive dependency) to this allowlist,
+# otherwise `pnpm install` fails with ERR_PNPM_IGNORED_BUILDS.
 allowBuilds:
   esbuild: true

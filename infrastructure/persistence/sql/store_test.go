@@ -71,9 +71,9 @@ func isolatedDSNOptions(base, schema string) string {
 		// preceding token (the database name) and isolation would silently
 		// be lost. Append an options keyword with a single-quoted value
 		// instead; pgx unquotes it back into RuntimeParams["options"]. The
-		// The value is quoted with a single quote. Both embedded
-		// backslashes and quotes must be escaped with a backslash; pgx
-		// drops an unescaped backslash instead of preserving it literally.
+		// value is quoted with a single quote, and both embedded backslashes
+		// and quotes must be escaped with a backslash; pgx drops an
+		// unescaped backslash instead of preserving it literally.
 		quoted := strings.ReplaceAll(options, `\`, `\\`)
 		quoted = strings.ReplaceAll(quoted, "'", `\'`)
 		return base + " options='" + quoted + "'"
@@ -331,6 +331,35 @@ func TestIsolatedDSNOptionsEscapesBackslash(t *testing.T) {
 	}
 	if cfg.RuntimeParams["options"] != "-c search_path="+schema {
 		t.Fatalf("options = %q, want %q", cfg.RuntimeParams["options"], "-c search_path="+schema)
+	}
+}
+
+// TestIsolatedDSNOptionsEscapesURL pins the URL branch against schemas
+// that pgx's query-string parsing would otherwise mangle: single quotes,
+// backslashes, spaces, '+' and '&' must all survive a url.QueryEscape
+// round-trip (with '+' rewritten to '%20') unchanged. The reviewer flagged
+// the keyword/value escaping tests only; this pins the symmetric URL path.
+func TestIsolatedDSNOptionsEscapesURL(t *testing.T) {
+	cases := []struct {
+		name   string
+		schema string
+	}{
+		{"single quote", `chame_sql_test_'probe`},
+		{"backslash", `chame_sql_test_\probe`},
+		{"backslash and quote", `chame_sql_test_\'probe`},
+		{"space plus ampersand", `chame_sql_test_ a+b&c`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := isolatedDSNOptions("postgres://user:pw@localhost:5432/db", tc.schema)
+			cfg, err := pgx.ParseConfig(got)
+			if err != nil {
+				t.Fatalf("pgx.ParseConfig(%q): %v", got, err)
+			}
+			if cfg.RuntimeParams["options"] != "-c search_path="+tc.schema {
+				t.Fatalf("options = %q, want %q", cfg.RuntimeParams["options"], "-c search_path="+tc.schema)
+			}
+		})
 	}
 }
 

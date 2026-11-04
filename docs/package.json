@@ -13,10 +13,5 @@
   "overrides": {
     "vite": "6.4.5"
   },
-  "pnpm": {
-    "overrides": {
-      "vite": "6.4.5"
-    }
-  },
   "packageManager": "pnpm@12.10.1"
 }
