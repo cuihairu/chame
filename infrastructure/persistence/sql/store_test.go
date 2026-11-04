@@ -71,10 +71,11 @@ func isolatedDSNOptions(base, schema string) string {
 		// preceding token (the database name) and isolation would silently
 		// be lost. Append an options keyword with a single-quoted value
 		// instead; pgx unquotes it back into RuntimeParams["options"]. The
-		// value is quoted with a single quote and embedded quotes are
-		// escaped with a backslash, which is the only escape pgx's quoted
-		// keyword/value parser recognizes (a doubled quote '' is an error).
-		quoted := strings.ReplaceAll(options, "'", `\'`)
+		// The value is quoted with a single quote. Both embedded
+		// backslashes and quotes must be escaped with a backslash; pgx
+		// drops an unescaped backslash instead of preserving it literally.
+		quoted := strings.ReplaceAll(options, `\`, `\\`)
+		quoted = strings.ReplaceAll(quoted, "'", `\'`)
 		return base + " options='" + quoted + "'"
 	}
 	escaped := url.QueryEscape(options)
@@ -237,37 +238,43 @@ func TestStoreMigrateIsConcurrencySafeOnFirstStart(t *testing.T) {
 func TestIsolatedDSNOptions(t *testing.T) {
 	const schema = "chame_sql_test_probe"
 	cases := []struct {
-		name string
-		base string
-		want string
-		kv   bool // keyword/value (conninfo) form, not a URL
+		name     string
+		base     string
+		want     string
+		database string
+		kv       bool // keyword/value (conninfo) form, not a URL
 	}{
 		{
-			name: "with existing query string",
-			base: "postgres://user:pw@localhost:5432/db?sslmode=disable",
-			want: "postgres://user:pw@localhost:5432/db?sslmode=disable&options=-c%20search_path%3Dchame_sql_test_probe",
+			name:     "with existing query string",
+			base:     "postgres://user:pw@localhost:5432/db?sslmode=disable",
+			want:     "postgres://user:pw@localhost:5432/db?sslmode=disable&options=-c%20search_path%3Dchame_sql_test_probe",
+			database: "db",
 		},
 		{
-			name: "bare postgres URL",
-			base: "postgres://user:pw@localhost:5432/db",
-			want: "postgres://user:pw@localhost:5432/db?options=-c%20search_path%3Dchame_sql_test_probe",
+			name:     "bare postgres URL",
+			base:     "postgres://user:pw@localhost:5432/db",
+			want:     "postgres://user:pw@localhost:5432/db?options=-c%20search_path%3Dchame_sql_test_probe",
+			database: "db",
 		},
 		{
-			name: "keyword value conninfo",
-			base: "host=localhost user=foo dbname=bar sslmode=disable",
-			want: "host=localhost user=foo dbname=bar sslmode=disable options='-c search_path=chame_sql_test_probe'",
-			kv:   true,
+			name:     "keyword value conninfo",
+			base:     "host=localhost user=foo dbname=bar sslmode=disable",
+			want:     "host=localhost user=foo dbname=bar sslmode=disable options='-c search_path=chame_sql_test_probe'",
+			database: "bar",
+			kv:       true,
 		},
 		{
-			name: "keyword value conninfo with existing options",
-			base: "host=localhost user=foo dbname=bar options='-c search_path=base'",
-			want: "host=localhost user=foo dbname=bar options='-c search_path=base' options='-c search_path=chame_sql_test_probe'",
-			kv:   true,
+			name:     "keyword value conninfo with existing options",
+			base:     "host=localhost user=foo dbname=bar options='-c search_path=base'",
+			want:     "host=localhost user=foo dbname=bar options='-c search_path=base' options='-c search_path=chame_sql_test_probe'",
+			database: "bar",
+			kv:       true,
 		},
 		{
-			name: "URL with existing options",
-			base: "postgres://user:pw@localhost:5432/db?options=-c%20search_path%3Dbase",
-			want: "postgres://user:pw@localhost:5432/db?options=-c%20search_path%3Dbase&options=-c%20search_path%3Dchame_sql_test_probe",
+			name:     "URL with existing options",
+			base:     "postgres://user:pw@localhost:5432/db?options=-c%20search_path%3Dbase",
+			want:     "postgres://user:pw@localhost:5432/db?options=-c%20search_path%3Dbase&options=-c%20search_path%3Dchame_sql_test_probe",
+			database: "db",
 		},
 	}
 	for _, tc := range cases {
@@ -286,8 +293,8 @@ func TestIsolatedDSNOptions(t *testing.T) {
 			if err != nil {
 				t.Fatalf("pgx.ParseConfig(%q): %v", got, err)
 			}
-			if cfg.Database != "db" && cfg.Database != "bar" {
-				t.Fatalf("database = %q, want db or bar", cfg.Database)
+			if cfg.Database != tc.database {
+				t.Fatalf("database = %q, want %q", cfg.Database, tc.database)
 			}
 			if cfg.RuntimeParams["options"] != "-c search_path="+schema {
 				t.Fatalf("options = %q, want %q", cfg.RuntimeParams["options"], "-c search_path="+schema)
@@ -302,6 +309,21 @@ func TestIsolatedDSNOptions(t *testing.T) {
 // unparseable. This is the path the reviewer flagged as untested.
 func TestIsolatedDSNOptionsEscapesQuote(t *testing.T) {
 	const schema = "chame_sql_test_'probe"
+	got := isolatedDSNOptions("host=localhost dbname=bar", schema)
+	cfg, err := pgx.ParseConfig(got)
+	if err != nil {
+		t.Fatalf("pgx.ParseConfig(%q): %v", got, err)
+	}
+	if cfg.RuntimeParams["options"] != "-c search_path="+schema {
+		t.Fatalf("options = %q, want %q", cfg.RuntimeParams["options"], "-c search_path="+schema)
+	}
+}
+
+// TestIsolatedDSNOptionsEscapesBackslash pins the keyword/value round-trip
+// when the schema itself contains backslashes: pgx treats an unescaped
+// backslash as an escape marker and removes it from the parsed value.
+func TestIsolatedDSNOptionsEscapesBackslash(t *testing.T) {
+	const schema = `chame_sql_test_\probe`
 	got := isolatedDSNOptions("host=localhost dbname=bar", schema)
 	cfg, err := pgx.ParseConfig(got)
 	if err != nil {
