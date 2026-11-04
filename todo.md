@@ -102,3 +102,6 @@
 ## 审核发现
 
 - 审核发现：本轮 diff 未见问题（1ed414dc..HEAD）。 — 不属实：pnpm 12 实测忽略 docs/package.json 顶层 `overrides` 字段（探针解析 vite@5.4.21 而非锁定的 6.4.5），有效 override 实际仅存在于 pnpm-workspace.yaml，package.json 中为死配置；已删除并复测 `pnpm install --frozen-lockfile` 与 `pnpm run docs:build` 通过（docs/package.json）
+- [x] 审核发现：删除 npm 的 overrides 后，使用 npm 安装文档依赖会忽略 pnpm-workspace.yaml 并重新解析出 Vite 5.x，使此前针对漏洞固定的 Vite 6.4.5 失效（docs/package.json:13） — 属实：无 npm `overrides` 时 `npm install --package-lock-only` 解析 vite 5.4.21（vitepress ^1.6.0→1.6.4 声明 vite ^5.4.14），pnpm-workspace.yaml 的 override 对 npm 无效；补回 package.json 顶层 `overrides.vite=6.4.5` 后 npm 解析 vite 6.4.5、`npm audit` 0 漏洞，pnpm 12.10.1 `pnpm install --frozen-lockfile` 与 `pnpm run docs:build` 均通过（docs/package.json:13，504 测试）
+- 审核发现：代码块换行只设置在 pre 上，而 VitePress 默认样式为内部 code 显式设置 white-space: pre，导致长代码行仍不换行（docs/.vitepress/theme/custom.css:2） — 不属实：2e2fda2 已在 custom.css:2-3 同时选中 `pre` 与 `pre code`，构建产物中 `pre code` 规则特异性 (0,2,3) 高于默认 (0,2,1) 且次序靠后，长代码行确已换行
+- 审核发现：无侧栏内容和带 aside 的内容宽度规则被 VitePress 带 scoped 属性的默认规则以更高优先级覆盖，桌面文档内容仍受原有宽度限制（docs/.vitepress/theme/custom.css:9） — 不属实：2e2fda2 已在 custom.css:7-15 为三条宽度规则加 `!important`，构建产物确认自定义规则覆盖带 scoped 属性的默认规则，内容宽度已为 960px
