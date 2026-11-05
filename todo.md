@@ -114,3 +114,4 @@
 - [x] 审核发现：本轮 diff（99dd9ff9..HEAD）未发现新问题；既有开放条目记录的两项问题经复核属实——删除 docs/package.json 顶层 overrides 使 npm 安装忽略 pnpm-workspace.yaml override 并回退 vite@5.4.21（docs/package.json:13），新增 runMu 未覆盖 /healthz 无锁读 `d.adapter` 的竞态与 nil 解引用（tools/txload/http.go:95） — 属实：两项均复现并已修复（见上两条），全仓 `make test-race` 通过（506 测试）
 
 - [x] 审核发现：本轮 diff 未见问题（a5fb3f05..HEAD） — 审核通过，无需改动：复核 a5fb3f05..HEAD 仅含 5bb56bd（healthz adapter 锁守卫 + vite npm override 恢复，新增 2 回归测试），全仓 `go test -race -p 1 -count=1 ./...` 通过（498 顶层测试 / 811 含子测试）。
+- [x] 审核发现：本轮 diff 未见问题（5bb56bd0..HEAD）。 — 审核通过，无需改动：git rev-list 5bb56bd0..HEAD 仅含 a5761d2（docs: record audit pass for a5fb3f05..HEAD），该提交仅改动 todo.md 纯文档、无代码/配置变更。
