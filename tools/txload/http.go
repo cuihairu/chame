@@ -31,12 +31,15 @@ func (d *Driver) Handler() http.Handler {
 		_, _ = w.Write(dashboardHTML)
 	})
 	mux.HandleFunc("/metrics", func(w http.ResponseWriter, _ *http.Request) {
-		if d.collector == nil {
+		d.runMu.Lock()
+		collector := d.collector
+		d.runMu.Unlock()
+		if collector == nil {
 			// Run has not built the collector yet.
 			http.Error(w, "no run in progress", http.StatusServiceUnavailable)
 			return
 		}
-		prometheus.Handler(d.collector).ServeHTTP(w, nil)
+		prometheus.Handler(collector).ServeHTTP(w, nil)
 	})
 	mux.HandleFunc("/api/state", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, d.Snapshot())
@@ -133,6 +136,10 @@ type EndpointView struct {
 
 // Snapshot renders the current state.
 func (d *Driver) Snapshot() Snapshot {
+	d.runMu.Lock()
+	startedAt := d.startedAt
+	endpoints := d.endpoints
+	d.runMu.Unlock()
 	s := Snapshot{
 		Network:       d.nid.String(),
 		ChainID:       d.cfg.ChainID,
@@ -147,7 +154,7 @@ func (d *Driver) Snapshot() Snapshot {
 		TPSTarget:     d.cfg.TPS,
 		RampSeconds:   d.cfg.Ramp.Seconds(),
 		DurationSec:   d.cfg.Duration.Seconds(),
-		UptimeSeconds: time.Since(d.startedAt).Seconds(),
+		UptimeSeconds: time.Since(startedAt).Seconds(),
 		Transitions:   map[string]int64{},
 	}
 	d.trackedMu.Lock()
@@ -155,8 +162,8 @@ func (d *Driver) Snapshot() Snapshot {
 		s.Transitions[k] = ctr.Load()
 	}
 	d.trackedMu.Unlock()
-	s.Endpoints = make([]EndpointView, 0, len(d.endpoints))
-	for _, ep := range d.endpoints {
+	s.Endpoints = make([]EndpointView, 0, len(endpoints))
+	for _, ep := range endpoints {
 		view := EndpointView{URL: ep.URL}
 		d.lastHealthMu.Lock()
 		view.Health = d.lastHealth[ep.URL]

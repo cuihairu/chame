@@ -188,6 +188,9 @@ type Driver struct {
 	collector *memmetrics.Collector
 	recorder  *prometheus.Recorder
 	endpoints []Endpoint
+	// runMu guards the Run-initialized fields the HTTP surface reads
+	// concurrently while a run is starting or in flight.
+	runMu sync.Mutex
 
 	// run state
 	sent        atomic.Int64
@@ -281,10 +284,18 @@ func NewDriver(cfg Config) (*Driver, error) {
 
 // Metrics exposes the collector the driver publishes into; the HTTP
 // layer serves it at /metrics.
-func (d *Driver) Metrics() *memmetrics.Collector { return d.collector }
+func (d *Driver) Metrics() *memmetrics.Collector {
+	d.runMu.Lock()
+	defer d.runMu.Unlock()
+	return d.collector
+}
 
 // Endpoints returns the endpoint pool with their fault injectors.
-func (d *Driver) Endpoints() []Endpoint { return d.endpoints }
+func (d *Driver) Endpoints() []Endpoint {
+	d.runMu.Lock()
+	defer d.runMu.Unlock()
+	return append([]Endpoint(nil), d.endpoints...)
+}
 
 // AttachNode registers the fault injector for one self-hosted endpoint
 // URL, so /api/faults can flip it live.
@@ -310,8 +321,10 @@ func (d *Driver) Adapter() *evm.Adapter { return d.adapter }
 // the duration or total is reached, then waits a grace period for the
 // recovery worker to settle stragglers and returns the summary.
 func (d *Driver) Run(ctx context.Context) (*Result, error) {
+	d.runMu.Lock()
 	d.collector = memmetrics.New()
 	d.recorder = prometheus.NewRecorder(d.collector)
+	d.runMu.Unlock()
 
 	ref, err := signer.NewAccountRef(d.nid, d.sender)
 	if err != nil {
@@ -365,20 +378,25 @@ func (d *Driver) Run(ctx context.Context) (*Result, error) {
 		return nil, fmt.Errorf("txload: transaction pipeline published no flow")
 	}
 
-	runCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	for _, t := range d.store.Tasks() {
-		go t.Task(runCtx)
-	}
-
 	// The pool keeps one client per configured endpoint; the driver's
-	// fault injectors line up by URL.
+	// fault injectors line up by URL. Assemble it before spawning the
+	// module tasks so the workers observe the initialized pool.
+	d.runMu.Lock()
 	d.endpoints = make([]Endpoint, len(d.cfg.Endpoints))
 	for i, url := range d.cfg.Endpoints {
 		d.endpoints[i] = Endpoint{URL: url, Node: d.faultNode(url)}
 	}
-
 	d.startedAt = time.Now()
+	d.runMu.Unlock()
+
+	runCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	for _, t := range d.store.Tasks() {
+		// Task failures surface through the transaction pipeline and
+		// its metrics, not the goroutine return value.
+		go func() { _ = t.Task(runCtx) }()
+	}
+
 	res := &Result{
 		StartedAt:      d.startedAt,
 		PhaseCounts:    map[string]int64{},
