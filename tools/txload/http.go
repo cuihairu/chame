@@ -90,9 +90,16 @@ func (d *Driver) Handler() http.Handler {
 		writeJSON(w, node.Faults())
 	})
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+		adapter := d.Adapter()
+		if adapter == nil {
+			// Run has not published the adapter yet (startup) or failed
+			// before dialing the endpoints: the pool is not healthy.
+			http.Error(w, "unhealthy\n", http.StatusServiceUnavailable)
+			return
+		}
 		ctx, cancel := context.WithTimeout(r.Context(), d.cfg.RequestTimeout)
 		defer cancel()
-		net, ok := d.adapter.Network(d.nid)
+		net, ok := adapter.Network(d.nid)
 		healthy := ok && net.Healthy(ctx) == nil
 		status := http.StatusOK
 		if !healthy {

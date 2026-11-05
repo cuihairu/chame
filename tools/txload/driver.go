@@ -314,7 +314,11 @@ func (d *Driver) Config() Config { return d.cfg }
 
 // Adapter exposes the started EVM adapter (health wiring in the HTTP
 // layer).
-func (d *Driver) Adapter() *evm.Adapter { return d.adapter }
+func (d *Driver) Adapter() *evm.Adapter {
+	d.runMu.Lock()
+	defer d.runMu.Unlock()
+	return d.adapter
+}
 
 // Run dials the endpoint pool, assembles the pipeline (adapter,
 // in-memory repository, flow, recovery worker), drives the load until
@@ -354,7 +358,9 @@ func (d *Driver) Run(ctx context.Context) (*Result, error) {
 	if !ok {
 		return nil, fmt.Errorf("txload: evm adapter published no network capability")
 	}
+	d.runMu.Lock()
 	d.adapter = adapterAny.(*evm.Adapter)
+	d.runMu.Unlock()
 	d.net, ok = d.adapter.Network(d.nid)
 	if !ok {
 		return nil, fmt.Errorf("txload: evm adapter has no network %s", d.nid)

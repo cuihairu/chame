@@ -4,6 +4,7 @@ import (
 	"context"
 	"net"
 	"net/http"
+	"sync"
 	"testing"
 	"time"
 
@@ -168,4 +169,82 @@ func TestHandlerServesDashboardAndMetrics(t *testing.T) {
 	state := waitOK("/api/state", 100)
 	_ = state.Body.Close()
 	<-runDone
+}
+
+// TestHandlerHealthzBeforeRun ensures /healthz never panics when the
+// HTTP server is up before Run has published the adapter (or Run fails
+// before dialing the endpoints): it answers 503 instead of dereferencing
+// a nil adapter (audit finding, tools/txload/http.go:95).
+func TestHandlerHealthzBeforeRun(t *testing.T) {
+	cfg := Config{
+		Endpoints:      []string{"http://127.0.0.1:1"}, // unroutable: Start fails
+		KeyHex:         "ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
+		TPS:            1,
+		Duration:       time.Second,
+		Concurrency:    1,
+		TxTimeout:      time.Second,
+		RequestTimeout: 200 * time.Millisecond,
+	}
+	d, err := NewDriver(cfg)
+	if err != nil {
+		t.Fatalf("driver: %v", err)
+	}
+	srv := &http.Server{Handler: d.Handler()}
+	ln, _ := net.Listen("tcp", "127.0.0.1:0")
+	go func() { _ = srv.Serve(ln) }()
+	t.Cleanup(func() { _ = srv.Close() })
+	base := "http://" + ln.Addr().String()
+
+	runErr := make(chan error, 1)
+	go func() {
+		_, err := d.Run(context.Background())
+		runErr <- err
+	}()
+	// The server is live before Run publishes the adapter; the request
+	// must not panic but answer 503.
+	resp, err := http.Get(base + "/healthz")
+	if err != nil {
+		t.Fatalf("healthz error: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("healthz status %d, want 503", resp.StatusCode)
+	}
+	<-runErr
+}
+
+// TestHandlerHealthzDuringRunStart exercises /healthz concurrently with
+// Run publishing the adapter: the mutex-guarded accessor must keep the
+// race detector quiet (audit finding, tools/txload/http.go:95).
+func TestHandlerHealthzDuringRunStart(t *testing.T) {
+	d := selfHosted(t, devchain.Faults{})
+	srv := &http.Server{Handler: d.Handler()}
+	ln, _ := net.Listen("tcp", "127.0.0.1:0")
+	go func() { _ = srv.Serve(ln) }()
+	t.Cleanup(func() { _ = srv.Close() })
+	base := "http://" + ln.Addr().String()
+
+	var wg sync.WaitGroup
+	stop := make(chan struct{})
+	for i := 0; i < 4; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				select {
+				case <-stop:
+					return
+				default:
+				}
+				if resp, err := http.Get(base + "/healthz"); err == nil {
+					_ = resp.Body.Close()
+				}
+			}
+		}()
+	}
+	if _, err := d.Run(context.Background()); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	close(stop)
+	wg.Wait()
 }
