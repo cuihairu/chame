@@ -117,3 +117,5 @@
 - [x] 审核发现：本轮 diff 未见问题（5bb56bd0..HEAD）。 — 审核通过，无需改动：git rev-list 5bb56bd0..HEAD 仅含 a5761d2（docs: record audit pass for a5fb3f05..HEAD），该提交仅改动 todo.md 纯文档、无代码/配置变更。
 
 - [x] 审核发现：本轮 diff 未见问题（a5761d29..HEAD）。 — 审核通过，无需改动：git rev-list a5761d29..HEAD 仅含 8972da6（todo: tick clean audit for 5bb56bd0..HEAD），该提交仅改动 todo.md 纯文档、无代码/配置变更；全仓 `go test -race -p 1 -count=1 ./...` 通过（498 顶层测试 / 31 包 ok）。
+
+- [x] 审核发现：本轮 diff 未见问题（8972da6b..HEAD）。 — 审核通过，无需改动：git rev-list 8972da6b..HEAD 仅含 1cef5aa（todo: tick clean audit for a5761d29..HEAD），该提交仅改动 todo.md 纯文档、无代码/配置变更；全仓 `make test-race` 通过。
