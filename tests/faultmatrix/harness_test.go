@@ -85,12 +85,26 @@ func TestFixedScenariosAcrossFaults(t *testing.T) {
 		{"Solana balance read", "getBalance"}, {"Solana fake-signer transaction RPC", "sendTransaction"}, {"Solana event poll RPC", "getSignaturesForAddress"},
 	}
 	faults := []fault{none, timeout, rateLimit, serverError, interrupt, slow}
+	// successBudget must comfortably cover the injected latency plus -race
+	// instrumentation and scheduler delays on a loaded machine: the slow
+	// fault stalls 20ms and none answers immediately, so a tight fixed
+	// budget (30ms) flakes on slow/loaded runners. timeoutBudget must
+	// instead expire before the server's 60ms stall so the client observes
+	// the injected timeout rather than a late success.
+	const (
+		successBudget = time.Second
+		timeoutBudget = 30 * time.Millisecond
+	)
 	for _, scenario := range scenarios {
 		for _, f := range faults {
 			t.Run(scenario.name+"/"+string(f), func(t *testing.T) {
 				s := endpoint(f)
 				defer s.Close()
-				ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+				budget := successBudget
+				if f == timeout {
+					budget = timeoutBudget
+				}
+				ctx, cancel := context.WithTimeout(context.Background(), budget)
 				defer cancel()
 				err := rpcCall(ctx, s.URL, scenario.method)
 				if f == none || f == slow {
