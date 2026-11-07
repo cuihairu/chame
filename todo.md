@@ -121,3 +121,25 @@
 - [x] 审核发现：本轮 diff 未见问题（8972da6b..HEAD）。 — 审核通过，无需改动：git rev-list 8972da6b..HEAD 仅含 1cef5aa（todo: tick clean audit for a5761d29..HEAD），该提交仅改动 todo.md 纯文档、无代码/配置变更；全仓 `make test-race` 通过。
 
 - [x] 审核发现：本轮 diff 未见问题（1cef5aaa..HEAD）。 — 审核通过，无需改动：git rev-list 1cef5aaa..HEAD 仅含 79aee68（todo: tick clean audit for 8972da6b..HEAD），该提交仅改动 todo.md 纯文档（+2 行审核记录）、无代码/配置变更。核实方式：git rev-list 1cef5aaa..HEAD 复核仅含 79aee68，git diff 1cef5aaa..HEAD --stat 显示仅 todo.md +2 行、git diff --check 无空白错误；当日 HEAD=79aee6882db880ef509a85d7350ed0e752526665。
+
+## 源码分层分析 2026-11-07
+
+### 抽象层清单
+
+- 运行时内核：校验依赖图并按生命周期阶段启动/停止模块与任务 — `core/runtime/runtime.go:51`
+- 链无关契约：定义网络、账户、资产、交易、事件、最终性与签名的语义接口和模型 — `capability/transaction/transaction.go:129`
+- 业务工作流：跨链复用可靠性策略，组合 Flow、恢复 Worker、事件分发与幂等 — `application/transaction/module.go:15`
+- 链适配器：按链族隔离 SDK、RPC 池、身份校验、事件轮询和链态映射 — `adapters/evm/module.go:20`
+- 基础设施实现：提供 PostgreSQL、进程内存、远端签名和指标导出的可替换副作用 — `infrastructure/persistence/sql/store.go:41`
+- 宿主/工具/合规层：选择具体实现、演示装配、驱动压测并校验公共契约 — `tools/txload/driver.go:173`
+
+### 超大文件候选
+
+无 >1000 行文件
+
+### 目录/分类不合理处
+
+- [ ] DIR-001 [P3] `application/gameledger` 位于 application 层，但定义的是宿主资产账本参考契约，且没有任何 application service 或状态；更适合并入 `capability/asset` 或独立的 `contracts/` 边界（application/gameledger/contract.go:32、application/gameledger/contract.go:121）
+- [ ] DIR-002 [P3] `application/idempotency` 只有 Service 与 doc，不注册 runtime module，也未与 transaction Flow 自动组合；它被宿主按库复用时与 application 工作流的模块约定不一致（application/idempotency/service.go:40、application/transaction/module.go:135）
+- [ ] DIR-003 [P3] `capability/finality` 仅有空壳 doc，实际最终性策略分散在 transaction/event 模型和两个 adapter config 中，能力名却声明为可发布槽位（capability/finality/doc.go:1、adapters/evm/config.go:21、adapters/solana/config.go:52、core/capability/capability.go:14）
+- [ ] DIR-004 [P3] `core/lifecycle` 被 `core/runtime` 使用，而 `core/capability` 既被 `core/module` 使用也被 adapters 引用；core 内部没有把“运行时规则”和“跨层契约名”分开成两组边界，读取依赖方向时需要逐个判断（core/lifecycle/lifecycle.go:59、core/runtime/runtime.go:51、core/capability/capability.go:10、adapters/solana/network.go:34）

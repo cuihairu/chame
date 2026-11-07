@@ -5,12 +5,10 @@ const base = '/chame/'
 
 export default defineConfig({
   base,
-  // The site is deliberately minimal (home + quick start + config/API). The
-  // spec, decisions, analysis and review docs stay as repository markdown
-  // (browsable on GitHub); exclude them from page scanning so the build stays
-  // green and the site is not an encyclopedia.
+  // The public site is minimal (home, quick start, architecture, glossary,
+  // and config/API). Detailed specs, decisions, review notes, and operational
+  // documents remain repository markdown so the site is not an encyclopedia.
   srcExclude: [
-    'analysis/**',
     'design/**',
     '审计-文档一致性.md',
     'decisions/**',
@@ -35,6 +33,7 @@ export default defineConfig({
         nav: [
           { text: 'Home', link: '/' },
           { text: 'Quick Start', link: '/quickstart' },
+          { text: 'Architecture', link: '/analysis/source-layer-analysis' },
           { text: 'Config / API', link: '/config' },
         ],
         sidebar: {
@@ -44,6 +43,8 @@ export default defineConfig({
               items: [
                 { text: 'Introduction', link: '/' },
                 { text: 'Quick Start', link: '/quickstart' },
+                { text: 'Glossary', link: '/glossary.en' },
+                { text: 'Architecture', link: '/analysis/source-layer-analysis' },
                 { text: 'Config / API', link: '/config' },
               ],
             },
@@ -56,6 +57,7 @@ export default defineConfig({
         nav: [
           { text: '首页', link: '/zh/' },
           { text: '快速开始', link: '/zh/quickstart' },
+          { text: '架构', link: '/zh/analysis/source-layer-analysis' },
           { text: '配置 / API', link: '/zh/config' },
         ],
         sidebar: {
@@ -65,6 +67,8 @@ export default defineConfig({
               items: [
                 { text: '介绍', link: '/zh/' },
                 { text: '快速开始', link: '/zh/quickstart' },
+                { text: '术语表', link: '/zh/glossary' },
+                { text: '架构', link: '/zh/analysis/source-layer-analysis' },
                 { text: '配置 / API', link: '/zh/config' },
               ],
             },
