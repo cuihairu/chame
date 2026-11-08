@@ -103,7 +103,7 @@ de47083ed7d7: Pull complete
 5ae30d21561f: Download complete
 ```
 
-45 秒窗口内没有得到可用镜像；随后 `docker image inspect ghcr.io/foundry-rs/foundry:latest --format '{{.Id}}'` 返回 `Error response from daemon: No such image: ghcr.io/foundry-rs/foundry:latest`。结论：**环境受阻·待节点**。没有访问公网测试网，也未使用真实密钥。
+45 秒窗口内没有得到可用镜像；随后 `docker image inspect ghcr.io/foundry-rs/foundry:latest --format '&#123;&#123;.Id&#125;&#125;'` 返回 `Error response from daemon: No such image: ghcr.io/foundry-rs/foundry:latest`。结论：**环境受阻·待节点**。没有访问公网测试网，也未使用真实密钥。
 
 **本地传输层矩阵**：命令 `go test ./tests/faultmatrix -v`。全部 36 个组合的“实测”均为 `httptest` 合成 JSON-RPC 响应；慢响应为 20 ms 且在 30 ms context deadline 内。超时响应延迟 60 ms；连接中断由关闭 hijacked HTTP 连接注入。预期中的“请求成功/传输错误”均由 harness 实测；它不调用 EVM/Solana Adapter 的账户/交易/eventSource 入口，因此“适配器/节点实测”均未测。
 

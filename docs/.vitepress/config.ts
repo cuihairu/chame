@@ -5,11 +5,13 @@ const base = '/chame/'
 
 export default defineConfig({
   base,
-  // The public site is minimal (home, quick start, architecture, glossary,
-  // and config/API). Detailed specs, decisions, review notes, and operational
-  // documents remain repository markdown so the site is not an encyclopedia.
+  // The public site stays focused (home, quick start, architecture, glossary,
+  // config/API, and the design decisions + asset/ledger boundary contract).
+  // The full spec, detailed ADRs, review notes, and operational documents
+  // remain repository markdown so the site is not an encyclopedia.
   srcExclude: [
-    'design/**',
+    'design/chame-spec.md',
+    'design/game-asset-ownership-and-ledger-boundary.md',
     '审计-文档一致性.md',
     'decisions/**',
     'review/**',
@@ -20,6 +22,16 @@ export default defineConfig({
   ],
   title: 'Chame',
   description: 'Go game backend framework abstracting blockchains behind one runtime',
+  // Evidence links in analysis/design pages point at repository sources (.go
+  // files) and at markdown kept out of the site (detailed ADRs, spec, ops docs).
+  // They are valid repo-relative references, not site routes, so they are
+  // excluded from the dead-link check rather than rewritten.
+  ignoreDeadLinks: [
+    /\.go(#L\d+)?$/,
+    /\.\.\/\.\.\//,
+    /\.\.\/(decisions|design)\//,
+    /\.\.\/(deployment-write-model|internal-controls|production-observability|README\.zh|todo)/,
+  ],
   head: [['link', { rel: 'icon', type: 'image/jpeg', href: `${base}images/logo.jpg` }]],
   themeConfig: {
     logo: `${base}images/logo.jpg`,
@@ -33,7 +45,7 @@ export default defineConfig({
         nav: [
           { text: 'Home', link: '/' },
           { text: 'Quick Start', link: '/quickstart' },
-          { text: 'Architecture', link: '/analysis/source-layer-analysis' },
+          { text: 'Architecture', link: '/analysis/source-layer-analysis.en' },
           { text: 'Config / API', link: '/config' },
         ],
         sidebar: {
@@ -44,8 +56,18 @@ export default defineConfig({
                 { text: 'Introduction', link: '/' },
                 { text: 'Quick Start', link: '/quickstart' },
                 { text: 'Glossary', link: '/glossary.en' },
-                { text: 'Architecture', link: '/analysis/source-layer-analysis' },
+                { text: 'Architecture', link: '/analysis/source-layer-analysis.en' },
                 { text: 'Config / API', link: '/config' },
+              ],
+            },
+            {
+              text: 'Design',
+              items: [
+                { text: 'Architecture Decisions', link: '/design/decisions' },
+                {
+                  text: 'Asset Ownership & Ledger Boundary',
+                  link: '/design/game-asset-ownership-and-ledger-boundary.en',
+                },
               ],
             },
           ],
