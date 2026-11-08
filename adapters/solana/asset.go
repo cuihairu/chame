@@ -8,7 +8,6 @@ import (
 
 	"github.com/gagliardetto/solana-go"
 
-	"github.com/cuihairu/chame/application/gameledger"
 	"github.com/cuihairu/chame/capability/asset"
 	"github.com/cuihairu/chame/capability/nft"
 	cherrs "github.com/cuihairu/chame/core/errors"
@@ -22,12 +21,12 @@ const metaplexMetadataProgram = "metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s"
 // SolanaHolding recognizes Metaplex NFT metadata by its canonical metadata
 // PDA and checks the wallet's SPL token accounts. RPC observations use this
 // network's configured commitment; this is not a game-ledger finality gate.
-func (p *AssetProvider) SolanaHolding(ctx context.Context, id gameledger.AssetIdentity, owner identifiers.Address) (nft.SolanaOwnership, error) {
+func (p *AssetProvider) SolanaHolding(ctx context.Context, id asset.AssetIdentity, owner identifiers.Address) (nft.SolanaOwnership, error) {
 	id, err := id.Normalize()
 	if err != nil {
 		return nft.SolanaOwnership{}, err
 	}
-	if id.Network != p.net.id || (id.Standard != gameledger.StandardSPLNFT && id.Standard != gameledger.StandardSPL) {
+	if id.Network != p.net.id || (id.Standard != asset.StandardSPLNFT && id.Standard != asset.StandardSPL) {
 		return nft.SolanaOwnership{}, cherrs.New(cherrs.InvalidArgument, p.net.opBase+".nft_holding", "identity must be SPL on this cluster")
 	}
 	mint, err := solana.PublicKeyFromBase58(id.Contract)
@@ -45,10 +44,10 @@ func (p *AssetProvider) SolanaHolding(ctx context.Context, id gameledger.AssetId
 		return nft.SolanaOwnership{}, err
 	}
 	isNFT := meta != nil && meta.Owner == metaplexMetadataProgram && len(meta.Data) >= 65 && bytes.Equal(meta.Data[33:65], mint[:])
-	if id.Standard == gameledger.StandardSPLNFT && !isNFT {
+	if id.Standard == asset.StandardSPLNFT && !isNFT {
 		return nft.SolanaOwnership{}, cherrs.New(cherrs.InvalidArgument, p.net.opBase+".nft_holding", "mint has no canonical Metaplex metadata account")
 	}
-	if id.Standard == gameledger.StandardSPL && isNFT {
+	if id.Standard == asset.StandardSPL && isNFT {
 		return nft.SolanaOwnership{}, cherrs.New(cherrs.InvalidArgument, p.net.opBase+".nft_holding", "Metaplex NFT must use spl-nft identity")
 	}
 	mintAddr := idAddress(id.Contract)

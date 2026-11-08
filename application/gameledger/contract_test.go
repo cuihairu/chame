@@ -3,16 +3,17 @@ package gameledger
 import (
 	"testing"
 
+	"github.com/cuihairu/chame/capability/asset"
 	"github.com/cuihairu/chame/core/identifiers"
 )
 
-func evmAsset(std Standard, id string) AssetIdentity {
-	return AssetIdentity{Network: identifiers.NetworkID{Family: identifiers.FamilyEVM, Name: "mainnet", ChainID: "1"}, Standard: std, Contract: "0x00000000000000000000000000000000000000AA", TokenID: id}
+func evmAsset(std asset.Standard, id string) asset.AssetIdentity {
+	return asset.AssetIdentity{Network: identifiers.NetworkID{Family: identifiers.FamilyEVM, Name: "mainnet", ChainID: "1"}, Standard: std, Contract: "0x00000000000000000000000000000000000000AA", TokenID: id}
 }
 
 func TestDuplicateTransferEventIsAppliedExactlyOnce(t *testing.T) {
 	ledger := NewLedger()
-	e := Entry{Key: "evm:tx-1:log-4", Player: "player-1", Asset: evmAsset(StandardERC20, ""), Delta: 25, State: Final}
+	e := Entry{Key: "evm:tx-1:log-4", Player: "player-1", Asset: evmAsset(asset.StandardERC20, ""), Delta: 25, State: Final}
 	inserted, err := ledger.Apply(e)
 	if err != nil || !inserted {
 		t.Fatalf("first delivery: inserted=%v err=%v", inserted, err)
@@ -32,7 +33,7 @@ func TestDuplicateTransferEventIsAppliedExactlyOnce(t *testing.T) {
 
 func TestPendingEntryIsVisibleButNotSpendable(t *testing.T) {
 	ledger := NewLedger()
-	e := Entry{Key: "sol:sig-1:ix-2", Player: "p", Asset: evmAsset(StandardERC20, ""), Delta: 10, State: Pending}
+	e := Entry{Key: "sol:sig-1:ix-2", Player: "p", Asset: evmAsset(asset.StandardERC20, ""), Delta: 10, State: Pending}
 	if inserted, err := ledger.Apply(e); err != nil || !inserted {
 		t.Fatalf("Apply=%v,%v", inserted, err)
 	}
@@ -52,7 +53,7 @@ func TestPendingEntryIsVisibleButNotSpendable(t *testing.T) {
 
 func TestReorgCompensatesOnce(t *testing.T) {
 	ledger := NewLedger()
-	e := Entry{Key: "evm:tx-2:log-0", Player: "p", Asset: evmAsset(StandardERC721, "0007"), Delta: 1, State: Confirmed}
+	e := Entry{Key: "evm:tx-2:log-0", Player: "p", Asset: evmAsset(asset.StandardERC721, "0007"), Delta: 1, State: Confirmed}
 	if _, err := ledger.Apply(e); err != nil {
 		t.Fatal(err)
 	}
@@ -69,30 +70,10 @@ func TestReorgCompensatesOnce(t *testing.T) {
 	}
 }
 
-func TestAssetIdentityNormalizationPreservesStandardDifferences(t *testing.T) {
-	erc721, err := evmAsset(StandardERC721, "0007").Normalize()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if want := "0x00000000000000000000000000000000000000aa"; erc721.Contract != want {
-		t.Fatalf("contract=%s, want %s", erc721.Contract, want)
-	}
-	if erc721.TokenID != "7" {
-		t.Fatalf("token id=%s, want canonical 7", erc721.TokenID)
-	}
-	erc1155, err := evmAsset(StandardERC1155, "7").Normalize()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if erc721 == erc1155 {
+func TestLedgerUsesCapabilityAssetIdentity(t *testing.T) {
+	// The ledger's asset key is the capability-layer identity; a standard
+	// mismatch is preserved, never collapsed.
+	if evmAsset(asset.StandardERC721, "0007") == evmAsset(asset.StandardERC1155, "0007") {
 		t.Fatal("ERC-721 and ERC-1155 identities were collapsed")
-	}
-	spl := AssetIdentity{Network: identifiers.NetworkID{Family: identifiers.FamilySolana, Name: "mainnet", ChainID: "genesis"}, Standard: StandardSPL, Contract: "Vote111111111111111111111111111111111111111"}
-	splID, err := spl.Normalize()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if splID.Standard == StandardERC20 || splID.Network.Family == identifiers.FamilyEVM {
-		t.Fatal("SPL identity was collapsed into EVM fungible identity")
 	}
 }

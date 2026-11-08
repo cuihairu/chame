@@ -6,7 +6,7 @@ import (
 	"context"
 	"math/big"
 
-	"github.com/cuihairu/chame/application/gameledger"
+	"github.com/cuihairu/chame/capability/asset"
 	"github.com/cuihairu/chame/core/identifiers"
 )
 
@@ -38,9 +38,9 @@ const (
 // Provider exposes standard-specific chain observations. These are facts,
 // not ledger entries; consumers must apply their configured finality policy.
 type EVMProvider interface {
-	ERC721Owner(context.Context, gameledger.AssetIdentity) (EVM721Ownership, error)
-	ERC1155Balance(context.Context, gameledger.AssetIdentity, identifiers.Address) (EVM1155Ownership, error)
+	ERC721Owner(context.Context, asset.AssetIdentity) (EVM721Ownership, error)
+	ERC1155Balance(context.Context, asset.AssetIdentity, identifiers.Address) (EVM1155Ownership, error)
 }
 type SolanaProvider interface {
-	SolanaHolding(context.Context, gameledger.AssetIdentity, identifiers.Address) (SolanaOwnership, error)
+	SolanaHolding(context.Context, asset.AssetIdentity, identifiers.Address) (SolanaOwnership, error)
 }

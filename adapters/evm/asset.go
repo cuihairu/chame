@@ -8,7 +8,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 
-	"github.com/cuihairu/chame/application/gameledger"
 	"github.com/cuihairu/chame/capability/asset"
 	"github.com/cuihairu/chame/capability/nft"
 	cherrs "github.com/cuihairu/chame/core/errors"
@@ -19,12 +18,12 @@ var _ nft.EVMProvider = (*AssetProvider)(nil)
 
 // ERC721Owner performs ownerOf(tokenId) on the named ERC-721 identity.
 // A latest-state eth_call is an unfinalized chain observation.
-func (p *AssetProvider) ERC721Owner(ctx context.Context, id gameledger.AssetIdentity) (nft.EVM721Ownership, error) {
+func (p *AssetProvider) ERC721Owner(ctx context.Context, id asset.AssetIdentity) (nft.EVM721Ownership, error) {
 	id, err := id.Normalize()
 	if err != nil {
 		return nft.EVM721Ownership{}, err
 	}
-	if id.Network != p.net.id || id.Standard != gameledger.StandardERC721 {
+	if id.Network != p.net.id || id.Standard != asset.StandardERC721 {
 		return nft.EVM721Ownership{}, cherrs.New(cherrs.InvalidArgument, p.net.opBase+".nft_owner", "identity must be ERC-721 on this network")
 	}
 	contract := common.HexToAddress(id.Contract)
@@ -53,12 +52,12 @@ func (p *AssetProvider) ERC721Owner(ctx context.Context, id gameledger.AssetIden
 
 // ERC1155Balance performs balanceOf(owner, tokenId), preserving the
 // standard's quantity instead of coercing it to a boolean.
-func (p *AssetProvider) ERC1155Balance(ctx context.Context, id gameledger.AssetIdentity, holder identifiers.Address) (nft.EVM1155Ownership, error) {
+func (p *AssetProvider) ERC1155Balance(ctx context.Context, id asset.AssetIdentity, holder identifiers.Address) (nft.EVM1155Ownership, error) {
 	id, err := id.Normalize()
 	if err != nil {
 		return nft.EVM1155Ownership{}, err
 	}
-	if id.Network != p.net.id || id.Standard != gameledger.StandardERC1155 {
+	if id.Network != p.net.id || id.Standard != asset.StandardERC1155 {
 		return nft.EVM1155Ownership{}, cherrs.New(cherrs.InvalidArgument, p.net.opBase+".nft_balance", "identity must be ERC-1155 on this network")
 	}
 	owner, err := toCommon(p.net.opBase+".nft_balance", holder)

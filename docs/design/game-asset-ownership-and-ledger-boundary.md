@@ -10,7 +10,7 @@
 
 宿主必须以 `(network.family, network.name, network.chain_id, standard, contract_or_mint, token_id?)` 作为资产键，禁止仅用符号、名称、地址或 token ID。标准保留差异：`native`、`erc20`、`erc721`、`erc1155`、`spl-token`、`spl-nft` 是不同身份空间。Native 不含合约；ERC 标准只接受 EVM 网络与合约地址；SPL 标准只接受 Solana 网络与 mint；ERC-721/1155 与 SPL NFT 必须带 token ID；fungible 标准不得带 token ID。EVM 地址规范为小写 `0x` 地址，token ID 规范为无前导零的十进制字符串；Solana base58 保持大小写原样。未知标准拒绝，不推断兼容。
 
-可执行规范在 [`application/gameledger/contract.go:16`](../../application/gameledger/contract.go#L16)，标准不得抹平的断言在 [`application/gameledger/contract_test.go:72`](../../application/gameledger/contract_test.go#L72)。既有 `identifiers.AssetID` 是 fungible 查询标识，不可当成 NFT token-id identity，见 [`core/identifiers/asset.go:23`](../../core/identifiers/asset.go#L23)。
+可执行规范：资产身份在 [`capability/asset/identity.go:33`](../../capability/asset/identity.go#L33)（`AssetIdentity`/`Standard`，两适配器与账本共享），账本参考契约在 [`application/gameledger/contract.go`](../../application/gameledger/contract.go)；标准不得抹平的断言在 [`capability/asset/identity_test.go:17`](../../capability/asset/identity_test.go#L17)。既有 `identifiers.AssetID` 是 fungible 查询标识，不可当成 NFT token-id identity，见 [`core/identifiers/asset.go:23`](../../core/identifiers/asset.go#L23)。
 
 ## 权威、可见性与写入规则
 
@@ -22,7 +22,7 @@
 | Finality / reorg | `reorged` 事件不得继续提供可用权。若已产生可逆入账，宿主以原事件关联的唯一补偿流水冲销；若奖励已消费或已产生外部副作用，进入宿主定义的人工/业务争议流程，不得伪装为链数据库回滚。 |
 | 事件重复 / 乱序 | 事件主键必须来自稳定链事件身份（例如 network + tx hash/signature + log/instruction index）；唯一约束与账本写入处于同一数据库事务。重复键同 payload 返回 existing/no-op，异 payload 拒绝。旧状态不得覆盖新状态；reorg 补偿也必须唯一。 |
 
-应用请求幂等仍沿用 `application/idempotency` 的 `(scope,key,request hash)` 及仓储 `CreateInserted` / `CreateSameKeyExisting` 原子胜者语义，见 [`application/idempotency/service.go:38`](../../application/idempotency/service.go#L38)、[`capability/transaction/repository.go:184`](../../capability/transaction/repository.go#L184) 和第 1 条成果。链事件幂等键与玩家请求幂等键是不同命名空间，不可互相替代。可执行契约用 `Apply` 对重复事件只插入一次、以 `SetState` 做一次补偿，见 [`application/gameledger/contract.go:140`](../../application/gameledger/contract.go#L140) 与 [`application/gameledger/contract_test.go:17`](../../application/gameledger/contract_test.go#L17)。
+应用请求幂等仍沿用 `application/idempotency` 的 `(scope,key,request hash)` 及仓储 `CreateInserted` / `CreateSameKeyExisting` 原子胜者语义，见 [`application/idempotency/service.go:38`](../../application/idempotency/service.go#L38)、[`capability/transaction/repository.go:184`](../../capability/transaction/repository.go#L184) 和第 1 条成果。链事件幂等键与玩家请求幂等键是不同命名空间，不可互相替代。可执行契约用 `Apply` 对重复事件只插入一次、以 `SetState` 做一次补偿，见 [`application/gameledger/contract.go:49`](../../application/gameledger/contract.go#L49)、[`application/gameledger/contract.go:73`](../../application/gameledger/contract.go#L73) 与 [`application/gameledger/contract_test.go:14`](../../application/gameledger/contract_test.go#L14)。
 
 ## 范围与明确不做
 

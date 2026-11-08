@@ -9,7 +9,7 @@ import (
 	"math/big"
 	"testing"
 
-	"github.com/cuihairu/chame/application/gameledger"
+	"github.com/cuihairu/chame/capability/asset"
 	cherrs "github.com/cuihairu/chame/core/errors"
 	"github.com/cuihairu/chame/core/identifiers"
 )
@@ -18,7 +18,7 @@ func TestNFT721SameContractDifferentTokenIDsAreDistinct(t *testing.T) {
 	f := newFakeClient(1)
 	f.selectorReply = map[string][]byte{"6352211e": append(make([]byte, 12), common.HexToAddress("0x0000000000000000000000000000000000000011").Bytes()...)}
 	p := testNetwork(t, f).AssetProvider()
-	base := gameledger.AssetIdentity{Network: p.Network(), Standard: gameledger.StandardERC721, Contract: erc20Addr, TokenID: "1"}
+	base := asset.AssetIdentity{Network: p.Network(), Standard: asset.StandardERC721, Contract: erc20Addr, TokenID: "1"}
 	a, err := p.ERC721Owner(context.Background(), base)
 	if err != nil {
 		t.Fatal(err)
@@ -37,7 +37,7 @@ func TestNFTQueryRPCErrorAndUnfinalizedObservation(t *testing.T) {
 	f := newFakeClient(1)
 	f.fail("call_contract", errors.New("offline"))
 	p := testNetwork(t, f).AssetProvider()
-	id := gameledger.AssetIdentity{Network: p.Network(), Standard: gameledger.StandardERC721, Contract: erc20Addr, TokenID: "9"}
+	id := asset.AssetIdentity{Network: p.Network(), Standard: asset.StandardERC721, Contract: erc20Addr, TokenID: "9"}
 	if _, err := p.ERC721Owner(context.Background(), id); err == nil {
 		t.Fatal("RPC error was hidden")
 	}
@@ -56,7 +56,7 @@ func TestNFT1155QuantityIsPreserved(t *testing.T) {
 	f := newFakeClient(1)
 	f.selectorReply = map[string][]byte{"00fdd58e": word32(17)}
 	p := testNetwork(t, f).AssetProvider()
-	id := gameledger.AssetIdentity{Network: p.Network(), Standard: gameledger.StandardERC1155, Contract: erc20Addr, TokenID: "7"}
+	id := asset.AssetIdentity{Network: p.Network(), Standard: asset.StandardERC1155, Contract: erc20Addr, TokenID: "7"}
 	got, err := p.ERC1155Balance(context.Background(), id, evmAddr(t, "0x0000000000000000000000000000000000000022"))
 	if err != nil {
 		t.Fatal(err)
