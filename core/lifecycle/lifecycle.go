@@ -1,5 +1,7 @@
 // Package lifecycle defines the shared runtime lifecycle states and
-// transition rules (spec §4.2).
+// transition rules (spec §4.2). It is a runtime rule (see core/doc.go):
+// the states and their ordering describe how a module instance behaves
+// while the runtime drives it, and carry no port semantics of their own.
 package lifecycle
 
 import "errors"

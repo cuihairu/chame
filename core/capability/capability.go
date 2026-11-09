@@ -3,6 +3,11 @@
 // the runtime validates coverage before start. Detection of a concrete
 // implementation happens through ordinary Go interface assertions on the
 // registered value.
+//
+// A capability name is a cross-layer contract (see core/doc.go): it is
+// the vocabulary in which adapters publish and applications consume, so
+// it is declared here, under core, and never re-declared in a
+// capability/, adapters/, or application/ package.
 package capability
 
 // Name identifies a capability slot in the registry. Names are stable and
