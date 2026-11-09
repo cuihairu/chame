@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/cuihairu/chame/capability/finality"
 	"github.com/cuihairu/chame/core/identifiers"
 )
 
@@ -44,32 +45,16 @@ const (
 
 // FinalityState is the event's finality state (§11.2, §11.4). Delivery is
 // gated on it: an event is not delivered until its state reaches the
-// configured requirement.
-type FinalityState string
+// configured requirement. The vocabulary is owned by the finality
+// capability contract (capability/finality); this alias keeps the event
+// model's names stable for hosts.
+type FinalityState = finality.State
 
 const (
-	FinalityPending   FinalityState = "pending"
-	FinalityConfirmed FinalityState = "confirmed"
-	FinalityFinal     FinalityState = "final"
+	FinalityPending   = finality.Pending
+	FinalityConfirmed = finality.Confirmed
+	FinalityFinal     = finality.Final
 )
-
-// Rank orders the finality states so a requirement can be expressed as
-// "at least this state".
-func (f FinalityState) Rank() int {
-	switch f {
-	case FinalityPending:
-		return 0
-	case FinalityConfirmed:
-		return 1
-	case FinalityFinal:
-		return 2
-	default:
-		return -1
-	}
-}
-
-// Valid reports whether f is a known finality state.
-func (f FinalityState) Valid() bool { return f.Rank() >= 0 }
 
 // ProcessingState is the delivery state (§11.4).
 type ProcessingState string
