@@ -219,6 +219,43 @@ func (s *EventStore) MarkReorged(_ context.Context, key event.CursorKey, blockHe
 	return n, nil
 }
 
+// WitnessedHashes implements event.Repository: the distinct non-empty
+// block hashes recorded per stored height, highest height first (§11.6
+// fork-point walk).
+func (s *EventStore) WitnessedHashes(_ context.Context, key event.CursorKey, below uint64) ([]event.Witness, error) {
+	if err := key.Validate(); err != nil {
+		return nil, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	byHeight := map[uint64]map[string]bool{}
+	for _, ev := range s.events {
+		if ev.Network != key.Network || ev.SourceType != key.SourceType {
+			continue
+		}
+		if ev.BlockHeight >= below || ev.BlockHash == "" {
+			continue
+		}
+		set, ok := byHeight[ev.BlockHeight]
+		if !ok {
+			set = map[string]bool{}
+			byHeight[ev.BlockHeight] = set
+		}
+		set[ev.BlockHash] = true
+	}
+	out := make([]event.Witness, 0, len(byHeight))
+	for h, set := range byHeight {
+		hashes := make([]string, 0, len(set))
+		for hash := range set {
+			hashes = append(hashes, hash)
+		}
+		sort.Strings(hashes)
+		out = append(out, event.Witness{Height: h, Hashes: hashes})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Height > out[j].Height })
+	return out, nil
+}
+
 // GetCursor implements event.Repository.
 func (s *EventStore) GetCursor(_ context.Context, key event.CursorKey) (event.Cursor, error) {
 	if err := key.Validate(); err != nil {

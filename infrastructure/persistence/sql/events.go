@@ -223,6 +223,40 @@ WHERE network_family = $1 AND network_name = $2 AND network_chain_id = $3
 	return int(n), nil
 }
 
+// WitnessedHashes implements event.Repository: the distinct non-empty
+// block hashes recorded per stored height, highest height first (§11.6
+// fork-point walk).
+func (s *EventStore) WitnessedHashes(ctx context.Context, key event.CursorKey, below uint64) ([]event.Witness, error) {
+	if err := key.Validate(); err != nil {
+		return nil, err
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT DISTINCT block_height, block_hash FROM chame_events
+WHERE network_family=$1 AND network_name=$2 AND network_chain_id=$3 AND source_type=$4
+  AND block_height < $5 AND block_hash <> ''
+ORDER BY block_height DESC, block_hash ASC`, key.Network.Family, key.Network.Name, key.Network.ChainID, key.SourceType, below)
+	if err != nil {
+		return nil, cherrs.New(cherrs.PersistenceFailure, "event.sql.witnessed_hashes", "%v", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []event.Witness
+	for rows.Next() {
+		var height int64
+		var hash string
+		if err := rows.Scan(&height, &hash); err != nil {
+			return nil, cherrs.New(cherrs.PersistenceFailure, "event.sql.witnessed_hashes", "%v", err)
+		}
+		if len(out) > 0 && out[len(out)-1].Height == uint64(height) {
+			out[len(out)-1].Hashes = append(out[len(out)-1].Hashes, hash)
+			continue
+		}
+		out = append(out, event.Witness{Height: uint64(height), Hashes: []string{hash}})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, cherrs.New(cherrs.PersistenceFailure, "event.sql.witnessed_hashes", "%v", err)
+	}
+	return out, nil
+}
+
 // GetCursor implements event.Repository.
 func (s *EventStore) GetCursor(ctx context.Context, key event.CursorKey) (event.Cursor, error) {
 	if err := key.Validate(); err != nil {

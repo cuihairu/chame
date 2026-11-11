@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"time"
 
 	"github.com/cuihairu/chame/capability/event"
@@ -476,11 +477,13 @@ func (d *Dispatcher) backoff(attempt int, now time.Time) time.Time {
 }
 
 // checkReorg verifies the cursor's block still belongs to the canonical
-// chain (§11.6). On a mismatch it invalidates the queued events from the
-// cursor height on, rolls the cursor back one level (or to the start when
-// the parent cannot be verified), and reports the new position for the
-// poll that follows. The reorged flag distinguishes an actual rollback
-// from an untouched position.
+// chain (§11.6). On a mismatch it locates the fork point — the highest
+// stored height whose recorded block hash the canonical chain still
+// carries — invalidates the queued events above it, rolls the cursor back
+// there (one level when no stored witness can verify a prefix, and to the
+// start when the parent cannot be verified either), and reports the new
+// position for the poll that follows. The reorged flag distinguishes an
+// actual rollback from an untouched position.
 func (d *Dispatcher) checkReorg(ctx context.Context, src Source, cursor event.Cursor) (next event.Cursor, invalidated int, reorged bool, err error) {
 	key := cursor.Key()
 	if cursor.BlockHeight == 0 || cursor.BlockHash == "" {
@@ -497,18 +500,29 @@ func (d *Dispatcher) checkReorg(ctx context.Context, src Source, cursor event.Cu
 		return cursor, 0, false, nil
 	}
 
-	// §11.6: the chain the cursor trusted no longer exists.
-	invalidated, err = d.repo.MarkReorged(ctx, key, cursor.BlockHeight)
-	if err != nil {
-		return cursor, invalidated, true, fmt.Errorf("mark reorged from %d: %w", cursor.BlockHeight, err)
-	}
-
-	// §11.6 step 5: roll back to a safe position and rescan. The parent
-	// block is the conservative target; when even it cannot be verified,
-	// rescan from the start — identity deduplication makes that safe.
+	// §11.6: the chain the cursor trusted no longer exists. Invalidating
+	// only the cursor's own height is not enough: a fork deeper than one
+	// level leaves queued events of the removed chain below the cursor,
+	// and a transaction re-included by the new chain is stored again under
+	// its new block hash — the same business event would deliver twice
+	// (§11.6 step 2).
 	target := cursor.BlockHeight - 1
 	targetHash := ""
-	if target > 0 {
+	from := cursor.BlockHeight
+	fork, forkHash, ok, err := d.findFork(ctx, src, key, cursor.BlockHeight)
+	if err != nil {
+		return cursor, 0, true, err
+	}
+	if ok {
+		// Everything queued above the verified fork sits on the removed
+		// chain: invalidate down to it and resume the rescan there.
+		target, targetHash, from = fork, forkHash, fork+1
+	} else if target > 0 {
+		// No stored witness verifies a prefix (records without block
+		// hashes cannot; solana logs keep none): fall back to the
+		// one-level rollback. The parent block is the conservative
+		// target; when even it cannot be verified, rescan from the
+		// start — identity deduplication makes that safe.
 		h, err := src.Head(ctx, target)
 		if err != nil {
 			target = 0
@@ -516,6 +530,11 @@ func (d *Dispatcher) checkReorg(ctx context.Context, src Source, cursor event.Cu
 			targetHash = h
 		}
 	}
+	invalidated, err = d.repo.MarkReorged(ctx, key, from)
+	if err != nil {
+		return cursor, invalidated, true, fmt.Errorf("mark reorged from %d: %w", from, err)
+	}
+
 	now := d.now.Now()
 	next = event.Cursor{Network: key.Network, SourceType: key.SourceType, BlockHeight: target, BlockHash: targetHash, UpdatedAt: now}
 	if err := d.repo.RollbackCursor(ctx, next); err != nil {
@@ -531,4 +550,30 @@ func (d *Dispatcher) checkReorg(ctx context.Context, src Source, cursor event.Cu
 		slog.Uint64("to", target),
 		slog.Int("invalidated", invalidated))
 	return next, invalidated, true, nil
+}
+
+// findFork locates the fork point of a reorganization detected at the
+// cursor: the highest stored height below the cursor whose recorded block
+// hash still matches the canonical chain. Heights the source cannot verify
+// prove nothing either way and are skipped; a store error aborts the walk
+// so the next tick re-detects from the untouched cursor. It reports
+// whether a fork point was verified at all.
+func (d *Dispatcher) findFork(ctx context.Context, src Source, key event.CursorKey, below uint64) (height uint64, hash string, ok bool, err error) {
+	witnesses, err := d.repo.WitnessedHashes(ctx, key, below)
+	if err != nil {
+		return 0, "", false, fmt.Errorf("read chain witnesses: %w", err)
+	}
+	for _, w := range witnesses {
+		h, err := src.Head(ctx, w.Height)
+		if errors.Is(err, event.ErrPositionUnknown) {
+			continue // position cannot be verified: no evidence either way
+		}
+		if err != nil {
+			return 0, "", false, fmt.Errorf("head %d: %w", w.Height, err)
+		}
+		if slices.Contains(w.Hashes, h) {
+			return w.Height, h, true, nil
+		}
+	}
+	return 0, "", false, nil
 }

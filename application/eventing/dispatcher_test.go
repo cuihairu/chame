@@ -453,6 +453,74 @@ func TestTickReorgInvalidatesQueuedEvents(t *testing.T) {
 	}
 }
 
+// A reorganization deeper than one level used to invalidate only the
+// queued events at the cursor's own height and roll the cursor back a
+// single block: events of the removed chain between the fork point and
+// the cursor stayed queued, and a transaction re-included by the new chain
+// was stored again under its new block hash — the same business event
+// delivering twice (§11.6 step 2). The fork walk must invalidate down to
+// the verified fork and rescan from it.
+func TestTickDeepReorgInvalidatesDownToFork(t *testing.T) {
+	s := newSuite(t, Config{})
+	s.src.addBlock(10, "0xa", 1)
+	s.src.addBlock(11, "0xb", 1)
+	s.src.addBlock(12, "0xb2", 1)
+	// Defer the height 11 event with a handler failure: it is a confirmed
+	// record of the old chain that must never deliver once the fork is
+	// found below it.
+	var oldID event.EventID
+	s.src.mu.Lock()
+	for _, ev := range s.src.blocks[11] {
+		oldID = ev.ID
+		s.failFor[string(ev.ID)] = errors.New("defer delivery")
+	}
+	s.src.mu.Unlock()
+	if _, err := s.disp.Tick(context.Background()); err != nil {
+		t.Fatalf("tick: %v", err)
+	}
+
+	// Deep reorg: the fork sits at height 10, two levels below the
+	// cursor. The new chain carries its own blocks at 11 and 12.
+	s.src.addBlock(11, "0xc", 1)
+	s.src.addBlock(12, "0xd", 1)
+	s.clock.advance(2 * time.Second) // the deferred event's backoff elapses
+
+	report, err := s.disp.Tick(context.Background())
+	if err != nil {
+		t.Fatalf("tick: %v", err)
+	}
+	if report.Reorgs != 1 || report.ReorgInvalidated != 1 {
+		t.Fatalf("the reorg must invalidate the queued events down to the fork: %+v", report)
+	}
+	if report.Stored != 2 || report.Delivered != 2 {
+		t.Fatalf("the new chain's blocks must be rescanned and delivered: %+v", report)
+	}
+	cursor, err := s.repo.GetCursor(context.Background(), event.CursorKey{Network: testNet, SourceType: event.SourceEVMLog})
+	if err != nil {
+		t.Fatalf("cursor: %v", err)
+	}
+	if cursor.BlockHeight != 12 || cursor.BlockHash != "0xd" || cursor.RollbackCount != 1 {
+		t.Fatalf("the cursor must resume from the fork and re-advance: %+v", cursor)
+	}
+	old, err := s.repo.Get(context.Background(), oldID)
+	if err != nil {
+		t.Fatalf("get old event: %v", err)
+	}
+	if old.Processing != event.ProcessingReorged || old.Observation != event.ObservationReorged {
+		t.Fatalf("the queued event on the removed chain must be invalidated: %+v", old)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, delivered := s.deliveries[string(oldID)]; delivered {
+		t.Fatal("an event of the removed chain must never deliver")
+	}
+	// Heights 10 and 12 delivered before the reorg stay delivered: the
+	// replacement pair joins them, and nothing else.
+	if len(s.deliveries) != 4 {
+		t.Fatalf("exactly the four canonical events may deliver, got %d", len(s.deliveries))
+	}
+}
+
 func TestTickReorgWithUnverifiableParentRescansFromStart(t *testing.T) {
 	s := newSuite(t, Config{})
 	s.src.addBlock(10, "0xa", 1)

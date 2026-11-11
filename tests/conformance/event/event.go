@@ -449,6 +449,54 @@ func runReorg(t *testing.T, newStore newStoreFunc) {
 			t.Fatalf("a different network must be untouched, got %s", got.Processing)
 		}
 	})
+
+	t.Run("witnessed hashes feed the fork walk", func(t *testing.T) {
+		// A re-included transaction leaves a height with two distinct
+		// hashes; siblings of one block share theirs. Records without a
+		// block hash (solana logs keep none) cannot verify anything and
+		// must not surface as witnesses.
+		mustCreate(t, repo, newEvent(evmNet, event.SourceEVMLog, "0xtx2", "0xother", 40, 1, at))
+		mustCreate(t, repo, newEvent(solNet, event.SourceSolanaLog, "sig2", "", 200, 0, at))
+
+		ws, err := repo.WitnessedHashes(ctx, event.CursorKey{Network: evmNet, SourceType: event.SourceEVMLog}, 100)
+		if err != nil {
+			t.Fatalf("witnessed hashes: %v", err)
+		}
+		wantHeights := []uint64{50, 40, 30, 20, 10}
+		if len(ws) != len(wantHeights) {
+			t.Fatalf("want heights %v, got %+v", wantHeights, ws)
+		}
+		for i, h := range wantHeights {
+			if ws[i].Height != h {
+				t.Fatalf("witness heights must descend: want %v, got %+v", wantHeights, ws)
+			}
+		}
+		if !reflect.DeepEqual(ws[1].Hashes, []string{"0xblock", "0xother"}) {
+			t.Fatalf("height 40 must list both distinct hashes ascending: %+v", ws[1].Hashes)
+		}
+		if !reflect.DeepEqual(ws[0].Hashes, []string{"0xblock"}) {
+			t.Fatalf("height 50 must collapse its records to one hash: %+v", ws[0].Hashes)
+		}
+
+		// The bound is strict: nothing at or below it is reported, and a
+		// source whose records keep no hash has no witnesses at all.
+		none, err := repo.WitnessedHashes(ctx, event.CursorKey{Network: evmNet, SourceType: event.SourceEVMLog}, 10)
+		if err != nil {
+			t.Fatalf("witnessed hashes: %v", err)
+		}
+		if len(none) != 0 {
+			t.Fatalf("heights must stay strictly below the bound, got %+v", none)
+		}
+		sol, err := repo.WitnessedHashes(ctx, event.CursorKey{Network: solNet, SourceType: event.SourceSolanaLog}, 300)
+		if err != nil {
+			t.Fatalf("witnessed hashes: %v", err)
+		}
+		// Only the height 100 record (hash "slot") verifies; the empty
+		// hash record at 200 must not surface as a witness.
+		if len(sol) != 1 || sol[0].Height != 100 || !reflect.DeepEqual(sol[0].Hashes, []string{"slot"}) {
+			t.Fatalf("records without a block hash are no witnesses, got %+v", sol)
+		}
+	})
 }
 
 // runCursors pins §11.5: per (network, source) cursors that never move

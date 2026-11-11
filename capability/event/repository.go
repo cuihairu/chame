@@ -85,6 +85,20 @@ type CursorProgress struct {
 	Hash   string
 }
 
+// Witness is one stored height's chain memory for the reorg walk (§11.6):
+// the distinct block hashes that retained records of one (network, source)
+// recorded at that height. Every record is evidence of what the source
+// once reported canonical there — queued, delivered, poisoned or reorged
+// alike.
+type Witness struct {
+	// Height is the recorded block height.
+	Height uint64
+	// Hashes lists the distinct non-empty block hashes recorded at Height,
+	// ascending. A height whose records carry no block hash (solana logs
+	// keep none) has nothing to verify and is not reported.
+	Hashes []string
+}
+
 // Repository persists event records and cursors (spec §11). Implementations
 // must be safe for concurrent use and must enforce, atomically:
 //
@@ -140,6 +154,13 @@ type Repository interface {
 	// business compensation is the application's decision (§11.6). It
 	// returns how many events were invalidated.
 	MarkReorged(ctx context.Context, key CursorKey, blockHeight uint64) (int, error)
+	// WitnessedHashes returns the stored chain memory of one (network,
+	// source) strictly below the given height: every stored height that
+	// has a non-empty block hash to compare, highest first (§11.6). The
+	// fork-point walk compares these hashes against the source's canonical
+	// chain: the highest stored height that still matches is the fork, and
+	// everything queued above it belongs to the removed chain.
+	WitnessedHashes(ctx context.Context, key CursorKey, below uint64) ([]Witness, error)
 	// GetCursor returns the resume position of one (network, source) pair,
 	// or ErrCursorNotFound when nothing has been saved yet.
 	GetCursor(ctx context.Context, key CursorKey) (Cursor, error)
