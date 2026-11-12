@@ -108,6 +108,8 @@ func TestNetworkSubmitAlreadyAcceptedStaysOpen(t *testing.T) {
 	if err := want.UnmarshalBinary(payload); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
+	// The duplicate-broadcast family: the bytes are already in flight or
+	// mined, so the outcome stays open and the hash travels with it.
 	for _, msg := range []string{
 		"already known",
 		"transaction already imported",
@@ -115,6 +117,10 @@ func TestNetworkSubmitAlreadyAcceptedStaysOpen(t *testing.T) {
 	} {
 		fake := newFakeClient(1)
 		fake.fail("send_transaction", errors.New(msg))
+		fake.withReceipt(want.Hash().Hex(), &types.Receipt{
+			Status:      types.ReceiptStatusSuccessful,
+			BlockNumber: big.NewInt(42),
+		})
 		n := testNetwork(t, fake)
 		hash, err := n.Submit(context.Background(), payload)
 		if err == nil {
@@ -129,6 +135,22 @@ func TestNetworkSubmitAlreadyAcceptedStaysOpen(t *testing.T) {
 		if hash != want.Hash().Hex() {
 			t.Errorf("msg %q: hash = %q, want the signed bytes' own hash %q (the reconciler observes by it)", msg, hash, want.Hash().Hex())
 		}
+	}
+	// "Nonce too low" with no trace of these bytes anywhere: another
+	// transaction consumed the nonce and these bytes will never execute.
+	// A decisive rejection, not an outcome to reconcile forever.
+	fake := newFakeClient(1)
+	fake.fail("send_transaction", errors.New("nonce too low"))
+	n := testNetwork(t, fake)
+	hash, err := n.Submit(context.Background(), payload)
+	if err == nil {
+		t.Fatal("Submit must still report the refusal")
+	}
+	if cat, ok := cherrs.CategoryOf(err); !ok || cat != cherrs.TransactionRejected {
+		t.Errorf("err = %v, want transaction rejected (the nonce moved on without these bytes)", err)
+	}
+	if hash != "" {
+		t.Errorf("hash = %q, want empty for a decisive rejection", hash)
 	}
 }
 

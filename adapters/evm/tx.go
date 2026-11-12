@@ -52,7 +52,21 @@ func (n *Network) Submit(ctx context.Context, signed []byte) (string, error) {
 		// travels with the open outcome: without it the reconciler has
 		// nothing to observe.
 		if broadcastAlreadyAccepted(raw) {
-			return tx.Hash().Hex(), of(cherrs.TransactionStatusUnknown, n.opBase+".send_transaction", n.id.String(), raw)
+			hash := tx.Hash().Hex()
+			if nonceTooLow(raw) {
+				// "Nonce too low" alone is ambiguous: either these very
+				// bytes mined earlier (their reply was lost), or another
+				// transaction consumed the nonce and these bytes will
+				// never execute. The receipt of these exact bytes settles
+				// it — mined or still pooled keeps the outcome open;
+				// no node knowing them at all is a replacement's answer.
+				status, _, rerr := n.Receipt(ctx, hash)
+				if rerr == nil && status == transaction.TxUnknown {
+					return "", of(cherrs.TransactionRejected, n.opBase+".send_transaction", n.id.String(),
+						fmt.Errorf("nonce already consumed by another transaction: %v", raw))
+				}
+			}
+			return hash, of(cherrs.TransactionStatusUnknown, n.opBase+".send_transaction", n.id.String(), raw)
 		}
 		return "", err
 	}
@@ -71,6 +85,13 @@ func broadcastAlreadyAccepted(err error) bool {
 	return strings.Contains(msg, "already known") ||
 		strings.Contains(msg, "already imported") ||
 		strings.Contains(msg, "nonce too low")
+}
+
+// nonceTooLow reports the ambiguous refusal in that family: the
+// account's nonce moved past this transaction, by these bytes mining
+// earlier or by another transaction replacing them.
+func nonceTooLow(err error) bool {
+	return err != nil && strings.Contains(strings.ToLower(err.Error()), "nonce too low")
 }
 
 // Receipt reports the transaction's inclusion outcome (spec §7.8):
