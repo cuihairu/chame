@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"encoding/json"
+	"strings"
 
 	"github.com/ethereum/go-ethereum/common"
 
@@ -175,10 +176,20 @@ func (s *LogSource) Head(ctx context.Context, height uint64) (string, error) {
 		return "", event.ErrPositionUnknown
 	}
 	info, err := s.net.BlockByNumber(ctx, height)
-	if err != nil {
+	if err != nil || isZeroHash(info.Hash) {
+		// A node that cannot name the block's hash verifies nothing: an
+		// empty answer must not compare as a real (mismatching) hash and
+		// trigger a reorg that never happened.
 		return "", event.ErrPositionUnknown
 	}
 	return info.Hash, nil
+}
+
+// isZeroHash reports a hash that names no block: empty or all zero
+// bytes, with or without the 0x prefix.
+func isZeroHash(h string) bool {
+	s := strings.TrimPrefix(strings.TrimPrefix(h, "0x"), "0X")
+	return strings.Trim(s, "0") == ""
 }
 
 // Observe re-checks one stored event on the current chain (spec §11.4):

@@ -214,6 +214,25 @@ func TestLogSourceHeadReturnsCanonicalHash(t *testing.T) {
 	}
 }
 
+// A hash that names no block — empty or all zero bytes — must be
+// reported as unverifiable, never compared as a real (mismatching)
+// canonical hash: that comparison is what triggers reorg invalidation.
+func TestIsZeroHashNamesNoBlock(t *testing.T) {
+	for h, want := range map[string]bool{
+		"":   true,
+		"0x": true,
+		"0x0000000000000000000000000000000000000000000000000000000000000000": true,
+		strings.Repeat("0", 64):              true,
+		"0X" + strings.Repeat("0", 64):       true,
+		"0x" + strings.Repeat("0", 63) + "1": false,
+		"0x" + strings.Repeat("ab", 32):      false,
+	} {
+		if got := isZeroHash(h); got != want {
+			t.Errorf("isZeroHash(%q) = %v, want %v", h, got, want)
+		}
+	}
+}
+
 func TestLogSourceObserveLadder(t *testing.T) {
 	fake, src, blockHash := pollSource(t, 20, 5, 1)
 	// The default finality depth is 12 (ADR-0006 mainnet default).
