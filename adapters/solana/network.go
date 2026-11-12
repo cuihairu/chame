@@ -436,7 +436,8 @@ func (n *Network) Transaction(ctx context.Context, sig string, commitment Commit
 }
 
 // Signatures returns up to limit signatures touching account, newest first.
-// A limit of zero uses the node default (1000).
+// A non-positive limit omits the parameter and uses the node default
+// page (1000): the RPC rejects a literal limit of 0.
 func (n *Network) Signatures(ctx context.Context, account identifiers.Address, limit int, commitment Commitment) ([]SignatureRecord, error) {
 	addr, err := toPublicKey(n.opBase+".signatures", account)
 	if err != nil {
@@ -455,10 +456,13 @@ func (n *Network) Signatures(ctx context.Context, account identifiers.Address, l
 	var out []*rpcTransactionSignature
 	err = n.pool.call(ctx, n.id.String(), n.opBase+".signatures", func(rc rpcClient) error {
 		var e error
-		out, e = rc.Signatures(ctx, addr, &rpcGetSignaturesForAddressOpts{
-			Commitment: c.rpc(),
-			Limit:      &limit,
-		})
+		opts := &rpcGetSignaturesForAddressOpts{Commitment: c.rpc()}
+		if limit > 0 {
+			// The RPC rejects limit values outside 1..1000: a zero limit
+			// means the node default, so the parameter is omitted.
+			opts.Limit = &limit
+		}
+		out, e = rc.Signatures(ctx, addr, opts)
 		return e
 	})
 	if err != nil {

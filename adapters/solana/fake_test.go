@@ -102,8 +102,11 @@ type fakeClient struct {
 	// Captures.
 	commitments []Commitment
 	accounts    []solana.PublicKey
-	closed      bool
-	attempts    map[string]int
+	// signatureLimit is the limit the last signature query carried, nil
+	// when the parameter was omitted.
+	signatureLimit *int
+	closed         bool
+	attempts       map[string]int
 }
 
 func newFakeClient(hash solana.Hash) *fakeClient {
@@ -337,6 +340,7 @@ func (f *fakeClient) Signatures(ctx context.Context, account solana.PublicKey, o
 	f.mu.Lock()
 	if opts != nil {
 		f.commitments = append(f.commitments, Commitment(opts.Commitment))
+		f.signatureLimit = opts.Limit
 	}
 	f.accounts = append(f.accounts, account)
 	f.mu.Unlock()

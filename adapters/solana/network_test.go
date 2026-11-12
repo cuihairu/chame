@@ -319,6 +319,27 @@ func TestSignaturesConverts(t *testing.T) {
 	}
 }
 
+// A zero limit means the node default: the RPC rejects a literal limit
+// of 0 (it must be 1..1000), so the parameter is omitted entirely.
+func TestSignaturesZeroLimitOmitsParameter(t *testing.T) {
+	f := newFakeClient(solanaHashFor(0x10))
+	n := newTestNetwork(f)
+
+	if _, err := n.Signatures(context.Background(), mustAddress(t, sysAccount), 0, CommitmentConfirmed); err != nil {
+		t.Fatalf("zero limit: %v", err)
+	}
+	if f.signatureLimit != nil {
+		t.Fatalf("limit %d was sent, want the parameter omitted", *f.signatureLimit)
+	}
+
+	if _, err := n.Signatures(context.Background(), mustAddress(t, sysAccount), 10, CommitmentConfirmed); err != nil {
+		t.Fatalf("limit 10: %v", err)
+	}
+	if f.signatureLimit == nil || *f.signatureLimit != 10 {
+		t.Fatalf("limit = %v, want 10", f.signatureLimit)
+	}
+}
+
 func TestSignaturesRejectsProcessedCommitment(t *testing.T) {
 	f := newFakeClient(solanaHashFor(0x10))
 	n := newTestNetwork(f)
