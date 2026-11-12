@@ -4,9 +4,39 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	cherrs "github.com/cuihairu/chame/core/errors"
 )
+
+// A hanging endpoint holds only its slice of the caller's budget: the
+// failover after it still has time to answer, instead of finding the
+// whole budget already consumed (spec §7.4).
+func TestPoolSlowEndpointLeavesFailoverBudget(t *testing.T) {
+	a := newFakeClient(1).hang("chain_id")
+	b := newFakeClient(1)
+	pool := newEndpointPool([]rpcClient{a, b}, &counters{})
+	ctx, cancel := context.WithTimeout(context.Background(), 400*time.Millisecond)
+	defer cancel()
+
+	start := time.Now()
+	err := pool.call(ctx, "evm/mainnet/1", "evm.chain_id", func(ctx context.Context, c rpcClient) error {
+		_, err := c.ChainID(ctx)
+		return err
+	})
+	elapsed := time.Since(start)
+	if err != nil {
+		t.Fatalf("call failed after %v: %v", elapsed, err)
+	}
+	// The hanging endpoint was cut at half the budget; the answer landed
+	// well inside the whole thing.
+	if elapsed >= 400*time.Millisecond {
+		t.Fatalf("call took %v, want the failover inside the budget", elapsed)
+	}
+	if a.callCount("chain_id") != 1 || b.callCount("chain_id") != 1 {
+		t.Errorf("attempts a=%d b=%d, want 1 each", a.callCount("chain_id"), b.callCount("chain_id"))
+	}
+}
 
 func TestPoolFailoverOnTransientError(t *testing.T) {
 	a := newFakeClient(1).fail("chain_id", netErr{msg: "connection refused"})
@@ -14,8 +44,8 @@ func TestPoolFailoverOnTransientError(t *testing.T) {
 	stats := &counters{}
 	pool := newEndpointPool([]rpcClient{a, b}, stats)
 
-	err := pool.call(context.Background(), "evm/mainnet/1", "evm.chain_id", func(c rpcClient) error {
-		_, err := c.ChainID(context.Background())
+	err := pool.call(context.Background(), "evm/mainnet/1", "evm.chain_id", func(ctx context.Context, c rpcClient) error {
+		_, err := c.ChainID(ctx)
 		return err
 	})
 	if err != nil {
@@ -33,8 +63,8 @@ func TestPoolFailoverOnTimeout(t *testing.T) {
 	a := newFakeClient(1).fail("chain_id", context.DeadlineExceeded)
 	b := newFakeClient(1)
 	pool := newEndpointPool([]rpcClient{a, b}, &counters{})
-	err := pool.call(context.Background(), "evm/mainnet/1", "evm.chain_id", func(c rpcClient) error {
-		_, err := c.ChainID(context.Background())
+	err := pool.call(context.Background(), "evm/mainnet/1", "evm.chain_id", func(ctx context.Context, c rpcClient) error {
+		_, err := c.ChainID(ctx)
 		return err
 	})
 	if err != nil {
@@ -49,8 +79,8 @@ func TestPoolStopsOnDeterministicError(t *testing.T) {
 	a := newFakeClient(1).fail("chain_id", dataErr{data: "0x"})
 	b := newFakeClient(1)
 	pool := newEndpointPool([]rpcClient{a, b}, &counters{})
-	err := pool.call(context.Background(), "evm/mainnet/1", "evm.chain_id", func(c rpcClient) error {
-		_, err := c.ChainID(context.Background())
+	err := pool.call(context.Background(), "evm/mainnet/1", "evm.chain_id", func(ctx context.Context, c rpcClient) error {
+		_, err := c.ChainID(ctx)
 		return err
 	})
 	if !errors.Is(err, cherrs.ErrTransactionExecutionFailed) {
@@ -65,8 +95,8 @@ func TestPoolAllEndpointsDown(t *testing.T) {
 	a := newFakeClient(1).fail("chain_id", netErr{msg: "connection refused"})
 	b := newFakeClient(1).fail("chain_id", netErr{msg: "connection refused"})
 	pool := newEndpointPool([]rpcClient{a, b}, &counters{})
-	err := pool.call(context.Background(), "evm/mainnet/1", "evm.chain_id", func(c rpcClient) error {
-		_, err := c.ChainID(context.Background())
+	err := pool.call(context.Background(), "evm/mainnet/1", "evm.chain_id", func(ctx context.Context, c rpcClient) error {
+		_, err := c.ChainID(ctx)
 		return err
 	})
 	if !errors.Is(err, cherrs.ErrNetworkUnavailable) {
@@ -82,8 +112,8 @@ func TestPoolSuccessBecomesCurrent(t *testing.T) {
 	b := newFakeClient(1)
 	pool := newEndpointPool([]rpcClient{a, b}, &counters{})
 	call := func() error {
-		return pool.call(context.Background(), "evm/mainnet/1", "evm.chain_id", func(c rpcClient) error {
-			_, err := c.ChainID(context.Background())
+		return pool.call(context.Background(), "evm/mainnet/1", "evm.chain_id", func(ctx context.Context, c rpcClient) error {
+			_, err := c.ChainID(ctx)
 			return err
 		})
 	}
@@ -107,8 +137,8 @@ func TestPoolContextCancelStopsFailover(t *testing.T) {
 	pool := newEndpointPool([]rpcClient{a, b}, &counters{})
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	err := pool.call(ctx, "evm/mainnet/1", "evm.chain_id", func(c rpcClient) error {
-		_, err := c.ChainID(context.Background())
+	err := pool.call(ctx, "evm/mainnet/1", "evm.chain_id", func(ctx context.Context, c rpcClient) error {
+		_, err := c.ChainID(ctx)
 		return err
 	})
 	if !errors.Is(err, context.Canceled) {

@@ -99,6 +99,10 @@ type fakeClient struct {
 	// slowByMethod sleeps before answering, for deadline tests.
 	slowByMethod map[string]time.Duration
 
+	// hangByMethod makes one method block until its context expires, so
+	// a test can hand the pool a hanging endpoint.
+	hangByMethod map[string]bool
+
 	// Captures.
 	commitments []Commitment
 	accounts    []solana.PublicKey
@@ -111,10 +115,17 @@ type fakeClient struct {
 
 func newFakeClient(hash solana.Hash) *fakeClient {
 	return &fakeClient{
-		hash:        hash,
-		errByMethod: map[string]error{},
-		attempts:    map[string]int{},
+		hash:         hash,
+		errByMethod:  map[string]error{},
+		attempts:     map[string]int{},
+		hangByMethod: map[string]bool{},
 	}
+}
+
+// hang makes one method block until its context expires.
+func (f *fakeClient) hang(method string) *fakeClient {
+	f.hangByMethod[method] = true
+	return f
 }
 
 func (f *fakeClient) fail(method string, err error) *fakeClient {
@@ -223,6 +234,13 @@ func (f *fakeClient) capturedSentTransaction() []byte {
 func (f *fakeClient) GenesisHash(ctx context.Context) (solana.Hash, error) {
 	if err := f.maybeFail("genesis_hash"); err != nil {
 		return solana.Hash{}, err
+	}
+	f.mu.Lock()
+	hanging := f.hangByMethod["genesis_hash"]
+	f.mu.Unlock()
+	if hanging {
+		<-ctx.Done()
+		return solana.Hash{}, ctx.Err()
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()

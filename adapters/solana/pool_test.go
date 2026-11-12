@@ -4,15 +4,42 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/gagliardetto/solana-go/rpc/jsonrpc"
 
 	cherrs "github.com/cuihairu/chame/core/errors"
 )
 
-func genesisCall(c rpcClient) error {
-	_, err := c.GenesisHash(context.Background())
+func genesisCall(ctx context.Context, c rpcClient) error {
+	_, err := c.GenesisHash(ctx)
 	return err
+}
+
+// A hanging endpoint holds only its slice of the caller's budget: the
+// failover after it still has time to answer, instead of finding the
+// whole budget already consumed (spec §7.4).
+func TestPoolSlowEndpointLeavesFailoverBudget(t *testing.T) {
+	a := newFakeClient(solanaHashFor(0x10)).hang("genesis_hash")
+	b := newFakeClient(solanaHashFor(0x10))
+	pool := newEndpointPool([]rpcClient{a, b}, &counters{})
+	ctx, cancel := context.WithTimeout(context.Background(), 400*time.Millisecond)
+	defer cancel()
+
+	start := time.Now()
+	err := pool.call(ctx, "solana/mainnet/x", "solana.genesis_hash", genesisCall)
+	elapsed := time.Since(start)
+	if err != nil {
+		t.Fatalf("call failed after %v: %v", elapsed, err)
+	}
+	// The hanging endpoint was cut at half the budget; the answer landed
+	// well inside the whole thing.
+	if elapsed >= 400*time.Millisecond {
+		t.Fatalf("call took %v, want the failover inside the budget", elapsed)
+	}
+	if a.callCount("genesis_hash") != 1 || b.callCount("genesis_hash") != 1 {
+		t.Errorf("attempts a=%d b=%d, want 1 each", a.callCount("genesis_hash"), b.callCount("genesis_hash"))
+	}
 }
 
 func TestPoolFailoverOnTransientError(t *testing.T) {

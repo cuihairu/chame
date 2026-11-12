@@ -37,7 +37,7 @@ func (n *Network) Submit(ctx context.Context, signed []byte) (string, error) {
 	defer cancel()
 	n.stats.countRequest()
 	var raw error
-	err := n.pool.call(ctx, n.id.String(), n.opBase+".send_transaction", func(c rpcClient) error {
+	err := n.pool.call(ctx, n.id.String(), n.opBase+".send_transaction", func(ctx context.Context, c rpcClient) error {
 		raw = c.SendTransaction(ctx, &tx)
 		return raw
 	})
@@ -108,7 +108,7 @@ func (n *Network) Receipt(ctx context.Context, txHash string) (transaction.Trans
 	n.stats.countRequest()
 	var receipt *types.Receipt
 	var pooled *types.Transaction
-	err = n.pool.call(ctx, n.id.String(), n.opBase+".transaction_receipt", func(c rpcClient) error {
+	err = n.pool.call(ctx, n.id.String(), n.opBase+".transaction_receipt", func(ctx context.Context, c rpcClient) error {
 		var e error
 		receipt, e = c.TransactionReceipt(ctx, hash)
 		if e != nil {

@@ -361,7 +361,7 @@ func (n *Network) Submit(ctx context.Context, signed []byte) (string, error) {
 	n.stats.countRequest()
 	var signature solana.Signature
 	var raw error
-	err = n.pool.call(ctx, n.id.String(), n.opBase+".send_transaction", func(rc rpcClient) error {
+	err = n.pool.call(ctx, n.id.String(), n.opBase+".send_transaction", func(ctx context.Context, rc rpcClient) error {
 		var e error
 		signature, e = rc.SendTransaction(ctx, signed)
 		raw = e

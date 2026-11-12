@@ -82,6 +82,10 @@ type fakeClient struct {
 	// can watch a deadline expire mid-build.
 	slowEstimate time.Duration
 
+	// hangByMethod makes one method block until its context expires, so
+	// a test can hand the pool a hanging endpoint.
+	hangByMethod map[string]bool
+
 	// Captures.
 	calls    []ethereum.CallMsg
 	queries  []ethereum.FilterQuery
@@ -94,10 +98,17 @@ type fakeClient struct {
 
 func newFakeClient(chainID uint64) *fakeClient {
 	return &fakeClient{
-		chainID:     big.NewInt(int64(chainID)),
-		errByMethod: map[string]error{},
-		attempts:    map[string]int{},
+		chainID:      big.NewInt(int64(chainID)),
+		errByMethod:  map[string]error{},
+		attempts:     map[string]int{},
+		hangByMethod: map[string]bool{},
 	}
+}
+
+// hang makes one method block until its context expires.
+func (f *fakeClient) hang(method string) *fakeClient {
+	f.hangByMethod[method] = true
+	return f
 }
 
 func (f *fakeClient) fail(method string, err error) *fakeClient {
@@ -231,6 +242,13 @@ func (f *fakeClient) maybeFail(method string) error {
 func (f *fakeClient) ChainID(ctx context.Context) (*big.Int, error) {
 	if err := f.maybeFail("chain_id"); err != nil {
 		return nil, err
+	}
+	f.mu.Lock()
+	hanging := f.hangByMethod["chain_id"]
+	f.mu.Unlock()
+	if hanging {
+		<-ctx.Done()
+		return nil, ctx.Err()
 	}
 	return new(big.Int).Set(f.chainID), nil
 }

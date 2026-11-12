@@ -101,7 +101,7 @@ func (n *Network) LatestBlockhash(ctx context.Context, commitment Commitment) (B
 	defer cancel()
 	n.stats.countRequest()
 	var out *latestBlockhashResult
-	err := n.pool.call(ctx, n.id.String(), n.opBase+".latest_blockhash", func(rc rpcClient) error {
+	err := n.pool.call(ctx, n.id.String(), n.opBase+".latest_blockhash", func(ctx context.Context, rc rpcClient) error {
 		var e error
 		out, e = rc.LatestBlockhash(ctx, c)
 		return e
@@ -135,7 +135,7 @@ func (n *Network) BlockHeight(ctx context.Context, commitment Commitment) (uint6
 	defer cancel()
 	n.stats.countRequest()
 	var height uint64
-	err := n.pool.call(ctx, n.id.String(), n.opBase+".block_height", func(rc rpcClient) error {
+	err := n.pool.call(ctx, n.id.String(), n.opBase+".block_height", func(ctx context.Context, rc rpcClient) error {
 		var e error
 		height, e = rc.BlockHeight(ctx, c)
 		return e
@@ -174,7 +174,7 @@ func (n *Network) Expire(ctx context.Context, pin BlockhashPin, signature string
 	defer cancel()
 	n.stats.countRequest()
 	var entries []*rpcSignatureStatusesResult
-	err = n.pool.call(ctx, n.id.String(), n.opBase+".expire", func(rc rpcClient) error {
+	err = n.pool.call(ctx, n.id.String(), n.opBase+".expire", func(ctx context.Context, rc rpcClient) error {
 		var e error
 		entries, e = rc.SignatureStatus(ctx, sig, opts.SearchHistory)
 		return e

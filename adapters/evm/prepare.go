@@ -290,7 +290,7 @@ func (n *Network) estimateGas(ctx context.Context, q BuildQuery) (uint64, error)
 	defer cancel()
 	n.stats.countRequest()
 	var gas uint64
-	err := n.pool.call(ctx, n.id.String(), n.opBase+".estimate_gas", func(c rpcClient) error {
+	err := n.pool.call(ctx, n.id.String(), n.opBase+".estimate_gas", func(ctx context.Context, c rpcClient) error {
 		var e error
 		gas, e = c.EstimateGas(ctx, msg)
 		return e
@@ -308,7 +308,7 @@ func (n *Network) suggestGasPrice(ctx context.Context) (*big.Int, error) {
 	defer cancel()
 	n.stats.countRequest()
 	var price *big.Int
-	err := n.pool.call(ctx, n.id.String(), n.opBase+".suggest_gas_price", func(c rpcClient) error {
+	err := n.pool.call(ctx, n.id.String(), n.opBase+".suggest_gas_price", func(ctx context.Context, c rpcClient) error {
 		var e error
 		price, e = c.SuggestGasPrice(ctx)
 		return e
@@ -328,7 +328,7 @@ func (n *Network) suggestTipCap(ctx context.Context) (*big.Int, error) {
 	defer cancel()
 	n.stats.countRequest()
 	var tip *big.Int
-	err := n.pool.call(ctx, n.id.String(), n.opBase+".suggest_gas_tip_cap", func(c rpcClient) error {
+	err := n.pool.call(ctx, n.id.String(), n.opBase+".suggest_gas_tip_cap", func(ctx context.Context, c rpcClient) error {
 		var e error
 		tip, e = c.SuggestGasTipCap(ctx)
 		return e

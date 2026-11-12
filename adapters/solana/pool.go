@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	cherrs "github.com/cuihairu/chame/core/errors"
 )
@@ -37,7 +38,14 @@ var closedPool = &endpointPool{closed: true}
 // transient, failover-eligible error it advances and retries, at most once
 // per endpoint. Deterministic errors return immediately. On success the
 // working endpoint becomes current. fn must be a read-only operation.
-func (p *endpointPool) call(ctx context.Context, network, op string, fn func(rpcClient) error) error {
+//
+// Failover shares the caller's budget in equal slices: each attempt runs
+// on a context bounded by the remaining time divided by the attempts
+// left, so a hanging endpoint consumes only its own slice and the
+// failover after it still has time to answer (spec §7.4). Without a
+// deadline in the caller context every attempt runs as long as fn
+// allows.
+func (p *endpointPool) call(ctx context.Context, network, op string, fn func(context.Context, rpcClient) error) error {
 	if p.closed {
 		return of(cherrs.NetworkUnavailable, op, network,
 			fmt.Errorf("network %s: adapter is closed", network))
@@ -57,7 +65,16 @@ func (p *endpointPool) call(ctx context.Context, network, op string, fn func(rpc
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		err := fn(p.clients[idx])
+		attempt := ctx
+		var cancel context.CancelFunc
+		if deadline, ok := ctx.Deadline(); ok {
+			slice := time.Until(deadline) / time.Duration(len(p.clients)-i)
+			attempt, cancel = context.WithTimeout(ctx, slice)
+		}
+		err := fn(attempt, p.clients[idx])
+		if cancel != nil {
+			cancel()
+		}
 		if err == nil {
 			p.mu.Lock()
 			p.current = idx

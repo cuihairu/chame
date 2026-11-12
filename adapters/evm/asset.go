@@ -32,7 +32,7 @@ func (p *AssetProvider) ERC721Owner(ctx context.Context, id asset.AssetIdentity)
 	data := append([]byte{}, sel[:]...)
 	data = append(data, common.LeftPadBytes(token.Bytes(), 32)...)
 	var out []byte
-	err = p.net.pool.call(ctx, p.net.opBase, p.net.opBase+".nft_owner", func(c rpcClient) error {
+	err = p.net.pool.call(ctx, p.net.opBase, p.net.opBase+".nft_owner", func(ctx context.Context, c rpcClient) error {
 		var e error
 		out, e = c.CallContract(ctx, ethereum.CallMsg{To: &contract, Data: data}, nil)
 		return e
@@ -71,7 +71,7 @@ func (p *AssetProvider) ERC1155Balance(ctx context.Context, id asset.AssetIdenti
 	data = append(data, common.LeftPadBytes(owner.Bytes(), 32)...)
 	data = append(data, common.LeftPadBytes(token.Bytes(), 32)...)
 	var out []byte
-	err = p.net.pool.call(ctx, p.net.opBase, p.net.opBase+".nft_balance", func(c rpcClient) error {
+	err = p.net.pool.call(ctx, p.net.opBase, p.net.opBase+".nft_balance", func(ctx context.Context, c rpcClient) error {
 		var e error
 		out, e = c.CallContract(ctx, ethereum.CallMsg{To: &contract, Data: data}, nil)
 		return e

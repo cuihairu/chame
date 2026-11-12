@@ -193,7 +193,7 @@ func (n *Network) GenesisHash(ctx context.Context) (string, error) {
 	defer cancel()
 	n.stats.countRequest()
 	var hash solana.Hash
-	err := n.pool.call(ctx, n.id.String(), n.opBase+".genesis_hash", func(c rpcClient) error {
+	err := n.pool.call(ctx, n.id.String(), n.opBase+".genesis_hash", func(ctx context.Context, c rpcClient) error {
 		var e error
 		hash, e = c.GenesisHash(ctx)
 		return e
@@ -213,7 +213,7 @@ func (n *Network) Slot(ctx context.Context, commitment Commitment) (uint64, erro
 	defer cancel()
 	n.stats.countRequest()
 	var slot uint64
-	err := n.pool.call(ctx, n.id.String(), n.opBase+".slot", func(rc rpcClient) error {
+	err := n.pool.call(ctx, n.id.String(), n.opBase+".slot", func(ctx context.Context, rc rpcClient) error {
 		var e error
 		slot, e = rc.Slot(ctx, c.rpc())
 		return e
@@ -237,7 +237,7 @@ func (n *Network) Balance(ctx context.Context, account identifiers.Address, comm
 	defer cancel()
 	n.stats.countRequest()
 	var lamports uint64
-	err = n.pool.call(ctx, n.id.String(), n.opBase+".balance", func(rc rpcClient) error {
+	err = n.pool.call(ctx, n.id.String(), n.opBase+".balance", func(ctx context.Context, rc rpcClient) error {
 		var e error
 		lamports, e = rc.Balance(ctx, addr, c.rpc())
 		return e
@@ -263,7 +263,7 @@ func (n *Network) Account(ctx context.Context, account identifiers.Address, comm
 	defer cancel()
 	n.stats.countRequest()
 	var out *accountResult
-	err = n.pool.call(ctx, n.id.String(), n.opBase+".account", func(rc rpcClient) error {
+	err = n.pool.call(ctx, n.id.String(), n.opBase+".account", func(ctx context.Context, rc rpcClient) error {
 		var e error
 		out, e = rc.AccountInfo(ctx, addr, &rpcGetAccountInfoOpts{Commitment: c.rpc()})
 		return e
@@ -307,7 +307,7 @@ func (n *Network) TokenBalance(ctx context.Context, tokenAccount identifiers.Add
 	defer cancel()
 	n.stats.countRequest()
 	var out *tokenBalanceResult
-	err = n.pool.call(ctx, n.id.String(), n.opBase+".token_balance", func(rc rpcClient) error {
+	err = n.pool.call(ctx, n.id.String(), n.opBase+".token_balance", func(ctx context.Context, rc rpcClient) error {
 		var e error
 		out, e = rc.TokenBalance(ctx, addr, c.rpc())
 		return e
@@ -350,7 +350,7 @@ func (n *Network) TokenAccounts(ctx context.Context, owner identifiers.Address, 
 	defer cancel()
 	n.stats.countRequest()
 	var out *tokenAccountsResult
-	err = n.pool.call(ctx, n.id.String(), n.opBase+".token_accounts", func(rc rpcClient) error {
+	err = n.pool.call(ctx, n.id.String(), n.opBase+".token_accounts", func(ctx context.Context, rc rpcClient) error {
 		var e error
 		out, e = rc.TokenAccounts(ctx, own, &rpcGetTokenAccountsConfig{Mint: mintKey}, &rpcGetTokenAccountsOpts{Commitment: c.rpc()})
 		return e
@@ -407,7 +407,7 @@ func (n *Network) Transaction(ctx context.Context, sig string, commitment Commit
 	defer cancel()
 	n.stats.countRequest()
 	var out *transactionResult
-	err = n.pool.call(ctx, n.id.String(), n.opBase+".transaction", func(rc rpcClient) error {
+	err = n.pool.call(ctx, n.id.String(), n.opBase+".transaction", func(ctx context.Context, rc rpcClient) error {
 		var e error
 		out, e = rc.Transaction(ctx, s, &rpcGetTransactionOpts{Commitment: c.rpc()})
 		return e
@@ -454,7 +454,7 @@ func (n *Network) Signatures(ctx context.Context, account identifiers.Address, l
 	defer cancel()
 	n.stats.countRequest()
 	var out []*rpcTransactionSignature
-	err = n.pool.call(ctx, n.id.String(), n.opBase+".signatures", func(rc rpcClient) error {
+	err = n.pool.call(ctx, n.id.String(), n.opBase+".signatures", func(ctx context.Context, rc rpcClient) error {
 		var e error
 		opts := &rpcGetSignaturesForAddressOpts{Commitment: c.rpc()}
 		if limit > 0 {
@@ -501,7 +501,7 @@ func (n *Network) Block(ctx context.Context, slot uint64, commitment Commitment)
 	defer cancel()
 	n.stats.countRequest()
 	var out *blockResult
-	err := n.pool.call(ctx, n.id.String(), n.opBase+".block", func(rc rpcClient) error {
+	err := n.pool.call(ctx, n.id.String(), n.opBase+".block", func(ctx context.Context, rc rpcClient) error {
 		var e error
 		out, e = rc.Block(ctx, slot, &rpcGetBlockOpts{Commitment: c.rpc()})
 		return e
@@ -538,7 +538,7 @@ func (n *Network) TransactionStatus(ctx context.Context, sig string) (*Confirmat
 	defer cancel()
 	n.stats.countRequest()
 	var entries []*rpcSignatureStatusesResult
-	err = n.pool.call(ctx, n.id.String(), n.opBase+".transaction_status", func(rc rpcClient) error {
+	err = n.pool.call(ctx, n.id.String(), n.opBase+".transaction_status", func(ctx context.Context, rc rpcClient) error {
 		var e error
 		entries, e = rc.SignatureStatus(ctx, s, false)
 		return e

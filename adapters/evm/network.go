@@ -175,7 +175,7 @@ func (n *Network) ChainID(ctx context.Context) (uint64, error) {
 	defer cancel()
 	n.stats.countRequest()
 	var id *big.Int
-	err := n.pool.call(ctx, n.id.String(), n.opBase+".chain_id", func(c rpcClient) error {
+	err := n.pool.call(ctx, n.id.String(), n.opBase+".chain_id", func(ctx context.Context, c rpcClient) error {
 		var e error
 		id, e = c.ChainID(ctx)
 		return e
@@ -198,7 +198,7 @@ func (n *Network) BlockNumber(ctx context.Context) (uint64, error) {
 	defer cancel()
 	n.stats.countRequest()
 	var num uint64
-	err := n.pool.call(ctx, n.id.String(), n.opBase+".block_number", func(c rpcClient) error {
+	err := n.pool.call(ctx, n.id.String(), n.opBase+".block_number", func(ctx context.Context, c rpcClient) error {
 		var e error
 		num, e = c.BlockNumber(ctx)
 		return e
@@ -220,7 +220,7 @@ func (n *Network) BlockByNumber(ctx context.Context, number uint64) (BlockInfo, 
 	if number != 0 {
 		tag = new(big.Int).SetUint64(number)
 	}
-	err := n.pool.call(ctx, n.id.String(), n.opBase+".header_by_number", func(c rpcClient) error {
+	err := n.pool.call(ctx, n.id.String(), n.opBase+".header_by_number", func(ctx context.Context, c rpcClient) error {
 		var e error
 		header, e = c.HeaderByNumber(ctx, tag)
 		return e
@@ -255,7 +255,7 @@ func (n *Network) BalanceAt(ctx context.Context, account identifiers.Address) (*
 	defer cancel()
 	n.stats.countRequest()
 	var bal *big.Int
-	err = n.pool.call(ctx, n.id.String(), n.opBase+".balance_at", func(c rpcClient) error {
+	err = n.pool.call(ctx, n.id.String(), n.opBase+".balance_at", func(ctx context.Context, c rpcClient) error {
 		var e error
 		bal, e = c.BalanceAt(ctx, addr, nil)
 		return e
@@ -280,7 +280,7 @@ func (n *Network) PendingNonceAt(ctx context.Context, account identifiers.Addres
 	defer cancel()
 	n.stats.countRequest()
 	var nonce uint64
-	err = n.pool.call(ctx, n.id.String(), n.opBase+".pending_nonce_at", func(c rpcClient) error {
+	err = n.pool.call(ctx, n.id.String(), n.opBase+".pending_nonce_at", func(ctx context.Context, c rpcClient) error {
 		var e error
 		nonce, e = c.PendingNonceAt(ctx, addr)
 		return e
@@ -309,7 +309,7 @@ func (n *Network) TokenBalance(ctx context.Context, token, holder identifiers.Ad
 	defer cancel()
 	n.stats.countRequest()
 	var out []byte
-	err = n.pool.call(ctx, n.id.String(), n.opBase+".token_balance", func(c rpcClient) error {
+	err = n.pool.call(ctx, n.id.String(), n.opBase+".token_balance", func(ctx context.Context, c rpcClient) error {
 		var e error
 		out, e = c.CallContract(ctx, ethereum.CallMsg{To: &tok, Data: balanceOfCall(own)}, nil)
 		return e
@@ -339,7 +339,7 @@ func (n *Network) CodeAt(ctx context.Context, account identifiers.Address) ([]by
 	defer cancel()
 	n.stats.countRequest()
 	var out []byte
-	err = n.pool.call(ctx, n.id.String(), n.opBase+".code_at", func(c rpcClient) error {
+	err = n.pool.call(ctx, n.id.String(), n.opBase+".code_at", func(ctx context.Context, c rpcClient) error {
 		var e error
 		out, e = c.CodeAt(ctx, addr, nil)
 		return e
@@ -371,7 +371,7 @@ func (n *Network) Call(ctx context.Context, q CallQuery) ([]byte, error) {
 	defer cancel()
 	n.stats.countRequest()
 	var out []byte
-	err = n.pool.call(ctx, n.id.String(), n.opBase+".call", func(c rpcClient) error {
+	err = n.pool.call(ctx, n.id.String(), n.opBase+".call", func(ctx context.Context, c rpcClient) error {
 		var e error
 		out, e = c.CallContract(ctx, msg, nil)
 		return e
@@ -394,7 +394,7 @@ func (n *Network) Logs(ctx context.Context, f LogFilter) ([]LogRecord, error) {
 	defer cancel()
 	n.stats.countRequest()
 	var logs []types.Log
-	err = n.pool.call(ctx, n.id.String(), n.opBase+".logs", func(c rpcClient) error {
+	err = n.pool.call(ctx, n.id.String(), n.opBase+".logs", func(ctx context.Context, c rpcClient) error {
 		var e error
 		logs, e = c.FilterLogs(ctx, q)
 		return e
