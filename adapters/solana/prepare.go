@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/gagliardetto/solana-go"
@@ -350,7 +351,8 @@ func decodeTransaction(raw []byte) (solana.Transaction, error) {
 func (n *Network) Submit(ctx context.Context, signed []byte) (string, error) {
 	// Decode first: a payload that is not a transaction is a local
 	// mistake, not a chain outage, and must not reach the endpoint.
-	if _, err := decodeTransaction(signed); err != nil {
+	tx, err := decodeTransaction(signed)
+	if err != nil {
 		return "", of(cherrs.InvalidArgument, n.opBase+".submit", n.id.String(),
 			fmt.Errorf("payload is not a Solana transaction: %v", err))
 	}
@@ -358,13 +360,24 @@ func (n *Network) Submit(ctx context.Context, signed []byte) (string, error) {
 	defer cancel()
 	n.stats.countRequest()
 	var signature solana.Signature
-	err := n.pool.call(ctx, n.id.String(), n.opBase+".send_transaction", func(rc rpcClient) error {
+	var raw error
+	err = n.pool.call(ctx, n.id.String(), n.opBase+".send_transaction", func(rc rpcClient) error {
 		var e error
 		signature, e = rc.SendTransaction(ctx, signed)
+		raw = e
 		return e
 	})
 	if err != nil {
 		n.stats.countError()
+		// A node that refuses the broadcast because the signature is
+		// already in flight or processed is usually answering a repeat
+		// of an earlier send whose reply was lost: the bytes may be on
+		// chain, so the outcome is open, not a decisive rejection. The
+		// signature lives in the signed bytes themselves, so it travels
+		// with the open outcome — the reconciler observes by it.
+		if broadcastAlreadyAccepted(raw) && len(tx.Signatures) > 0 {
+			return sigString(tx.Signatures[0]), of(cherrs.TransactionStatusUnknown, n.opBase+".send_transaction", n.id.String(), raw)
+		}
 		return "", err
 	}
 	if signature.IsZero() {
@@ -375,4 +388,17 @@ func (n *Network) Submit(ctx context.Context, signed []byte) (string, error) {
 			fmt.Errorf("node accepted the transaction but returned no signature"))
 	}
 	return sigString(signature), nil
+}
+
+// broadcastAlreadyAccepted reports whether a broadcast rejection means
+// the signature is already in flight or processed: it usually answers a
+// repeat of an earlier send whose reply was lost. Nodes phrase these
+// refusals as free-form message text; the phrasings are the convention.
+func broadcastAlreadyAccepted(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "already processed") ||
+		strings.Contains(msg, "already been processed")
 }

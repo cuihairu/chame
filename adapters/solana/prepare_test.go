@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/binary"
+	"errors"
 	"testing"
 	"time"
 
@@ -329,5 +330,39 @@ func TestSubmitTimeoutStaysOpen(t *testing.T) {
 		t.Fatal("Submit over a dead endpoint: err = nil, want error")
 	} else if cat, ok := cherrs.CategoryOf(err); !ok || cat != cherrs.RequestTimeout {
 		t.Errorf("err = %v, want request timeout (the outcome stays open)", err)
+	}
+}
+
+// TestSubmitAlreadyProcessedStaysOpen pins the "already processed"
+// refusal: the node holds the signature from an earlier broadcast of
+// the very same bytes whose reply was lost. The outcome is open, and
+// the signature comes from the signed bytes themselves — the reconciler
+// observes by it.
+func TestSubmitAlreadyProcessedStaysOpen(t *testing.T) {
+	for _, msg := range []string{
+		"already processed",
+		"Transaction has already been processed",
+	} {
+		f := newFakeClient(solanaHashFor(0x10))
+		f.fail("send_transaction", errors.New(msg))
+		n, signed := signedFixture(t, f)
+		tx, err := decodeTransaction(signed)
+		if err != nil {
+			t.Fatalf("decode fixture: %v", err)
+		}
+
+		sig, err := n.Submit(context.Background(), signed)
+		if err == nil {
+			t.Fatalf("msg %q: Submit must still report the refusal", msg)
+		}
+		if cat, ok := cherrs.CategoryOf(err); !ok || cat != cherrs.TransactionStatusUnknown {
+			t.Errorf("msg %q: err = %v, want transaction status unknown", msg, err)
+		}
+		if !errors.Is(err, cherrs.ErrTransactionStatusUnknown) {
+			t.Errorf("msg %q: err must match the status unknown sentinel: %v", msg, err)
+		}
+		if want := tx.Signatures[0].String(); sig != want {
+			t.Errorf("msg %q: signature = %q, want the signed bytes' own signature %q", msg, sig, want)
+		}
 	}
 }
