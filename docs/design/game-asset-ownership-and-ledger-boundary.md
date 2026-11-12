@@ -22,7 +22,7 @@
 | Finality / reorg | `reorged` 事件不得继续提供可用权。若已产生可逆入账，宿主以原事件关联的唯一补偿流水冲销；若奖励已消费或已产生外部副作用，进入宿主定义的人工/业务争议流程，不得伪装为链数据库回滚。 |
 | 事件重复 / 乱序 | 事件主键必须来自稳定链事件身份（例如 network + tx hash/signature + log/instruction index）；唯一约束与账本写入处于同一数据库事务。重复键同 payload 返回 existing/no-op，异 payload 拒绝。旧状态不得覆盖新状态；reorg 补偿也必须唯一。 |
 
-应用请求幂等仍沿用 `application/idempotency` 的 `(scope,key,request hash)` 及仓储 `CreateInserted` / `CreateSameKeyExisting` 原子胜者语义，见 [`application/idempotency/service.go:38`](../../application/idempotency/service.go#L38)、[`capability/transaction/repository.go:184`](../../capability/transaction/repository.go#L184) 和第 1 条成果。链事件幂等键与玩家请求幂等键是不同命名空间，不可互相替代。可执行契约用 `Apply` 对重复事件只插入一次、以 `SetState` 做一次补偿，见 [`application/gameledger/contract.go:49`](../../application/gameledger/contract.go#L49)、[`application/gameledger/contract.go:73`](../../application/gameledger/contract.go#L73) 与 [`application/gameledger/contract_test.go:14`](../../application/gameledger/contract_test.go#L14)。
+应用请求幂等仍沿用 `application/idempotency` 的 `(scope,key,request hash)` 及仓储 `CreateInserted` / `CreateSameKeyExisting` 原子胜者语义，见 [`application/idempotency/service.go:38`](../../application/idempotency/service.go#L38)、[`capability/transaction/repository.go:184`](../../capability/transaction/repository.go#L184) 和第 1 条成果。链事件幂等键与玩家请求幂等键是不同命名空间，不可互相替代。可执行契约用 `Apply` 对重复事件只插入一次；`SetState` 对 reorged 条目反复应答冲销金额，直到宿主以 `MarkCompensated` 记录逆向业务操作已应用（崩溃于标记与应用之间的宿主可凭该金额重试），见 [`application/gameledger/contract.go:54`](../../application/gameledger/contract.go#L54)、[`application/gameledger/contract.go:86`](../../application/gameledger/contract.go#L86)、[`application/gameledger/contract.go:118`](../../application/gameledger/contract.go#L118) 与 [`application/gameledger/contract_test.go:58`](../../application/gameledger/contract_test.go#L58)。
 
 ## 范围与明确不做
 
@@ -42,7 +42,8 @@
 
 - `TestDuplicateTransferEventIsAppliedExactlyOnce`：同一事件重投只产生一个条目。
 - `TestPendingEntryIsVisibleButNotSpendable`：pending 可查但不可花，确认后才可用。
-- `TestReorgCompensatesOnce`：reorg 冲销恰好一次且条目不可花。
+- `TestReorgCompensationAnsweredUntilApplied`：reorg 冲销金额可反复应答，直到宿主记录 `MarkCompensated`；此后条目不可花。
+- `TestReorgCompensationRequiresADeliveredState`：仅已入账（confirmed/final）条目产生冲销；pending 不冲销，live 条目不可补偿。
 - `TestAssetIdentityNormalizationPreservesStandardDifferences`：规范化地址/token ID，同时保留 ERC-721/ERC-1155/SPL 标准差异。
 
 这些测试验证边界契约，不证明宿主完整账本或生产链数据正确。

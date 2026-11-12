@@ -22,7 +22,7 @@ The executable contract is in [`application/gameledger/contract.go:16`](../../ap
 | Finality/reorg | A `reorged` event grants no spendable rights. Reverse prior reversible credits with one compensation entry linked to the original event. If rewards were consumed or caused external effects, enter a host-defined dispute process; a chain reorg is not a game database rollback. |
 | Duplicate/out-of-order events | Use a stable chain event key (for example network + tx hash/signature + log/instruction index); enforce uniqueness in the same transaction as the ledger write. Same-key/same-payload is existing/no-op; different payload is rejected. Older state cannot overwrite newer state, and compensation is unique. |
 
-Application request idempotency continues to use `application/idempotency` `(scope,key,request hash)` and the repository's atomic `CreateInserted` / `CreateSameKeyExisting` winner result ([`application/idempotency/service.go:38`](../../application/idempotency/service.go#L38), [`capability/transaction/repository.go:184`](../../capability/transaction/repository.go#L184), result of checklist item 1). Chain-event keys and player-request keys are separate namespaces. The executable contract applies an event once and compensates a reorg once ([`application/gameledger/contract.go:140`](../../application/gameledger/contract.go#L140), [`application/gameledger/contract_test.go:17`](../../application/gameledger/contract_test.go#L17)).
+Application request idempotency continues to use `application/idempotency` `(scope,key,request hash)` and the repository's atomic `CreateInserted` / `CreateSameKeyExisting` winner result ([`application/idempotency/service.go:38`](../../application/idempotency/service.go#L38), [`capability/transaction/repository.go:184`](../../capability/transaction/repository.go#L184), result of checklist item 1). Chain-event keys and player-request keys are separate namespaces. The executable contract applies an event once, and a reorged entry keeps answering its compensation amount until the host records the inverse operation applied with `MarkCompensated` — a host that stops between the mark and the operation retries with the same amount ([`application/gameledger/contract.go:86`](../../application/gameledger/contract.go#L86), [`application/gameledger/contract.go:118`](../../application/gameledger/contract.go#L118), [`application/gameledger/contract_test.go:58`](../../application/gameledger/contract_test.go#L58)).
 
 ## Scope and explicit exclusions
 
@@ -34,7 +34,8 @@ Data export, analytics export, and cloud backup are off by default; hosts must e
 
 - `TestDuplicateTransferEventIsAppliedExactlyOnce`: redelivery creates one entry.
 - `TestPendingEntryIsVisibleButNotSpendable`: pending is queryable but unavailable until confirmed.
-- `TestReorgCompensatesOnce`: reorg compensation occurs once and the entry is not spendable.
+- `TestReorgCompensationAnsweredUntilApplied`: the reorg compensation amount stays answerable until the host records `MarkCompensated`; afterwards the entry is not spendable.
+- `TestReorgCompensationRequiresADeliveredState`: only a delivered (confirmed/final) entry earns a reversal; pending entries compensate nothing and live entries cannot be compensated.
 - `TestAssetIdentityNormalizationPreservesStandardDifferences`: normalize address/token ID while preserving ERC-721/ERC-1155/SPL distinctions.
 
 These tests validate the boundary contract; they do not prove a host's complete ledger or production chain data.

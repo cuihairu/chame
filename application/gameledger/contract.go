@@ -36,6 +36,11 @@ type Entry struct {
 	Delta       int64
 	State       ObservationState
 	Compensated bool
+
+	// delivered remembers whether the observation ever counted toward a
+	// balance: a reorged entry keeps answering its compensation amount
+	// until the host confirms the inverse operation applied.
+	delivered bool
 }
 
 // Ledger is an executable reference contract for exactly-once projection.
@@ -58,6 +63,9 @@ func (l *Ledger) Apply(e Entry) (inserted bool, err error) {
 	if e.State != Pending && e.State != Confirmed && e.State != Final {
 		return false, errors.New("new entry state must be pending, confirmed, or final")
 	}
+	if e.State == Confirmed || e.State == Final {
+		e.delivered = true
+	}
 	if old, ok := l.entries[e.Key]; ok {
 		if old.Player != e.Player || old.Asset != e.Asset || old.Delta != e.Delta {
 			return false, errors.New("event key reused with different payload")
@@ -68,8 +76,13 @@ func (l *Ledger) Apply(e Entry) (inserted bool, err error) {
 	return true, nil
 }
 
-// SetState tracks finality/reorg. Reorg compensation is marked once; host
-// code must apply the inverse business operation in the same DB transaction.
+// SetState tracks finality/reorg. Moving an entry to reorged answers the
+// compensation amount the host must apply as the inverse business
+// operation, in the same DB transaction as its bookkeeping. The amount
+// stays answerable on every reorged read until the host records the
+// operation applied (MarkCompensated): a host that stops between the
+// mark and the inverse operation must be able to retry without losing
+// the amount, and a compensated entry answers nothing.
 func (l *Ledger) SetState(key EventKey, state ObservationState) (compensate int64, err error) {
 	e, ok := l.entries[key]
 	if !ok {
@@ -84,16 +97,38 @@ func (l *Ledger) SetState(key EventKey, state ObservationState) (compensate int6
 	if state != Reorged && observationRank(state) < observationRank(e.State) {
 		return 0, errors.New("observation state cannot move backwards")
 	}
-	if state == Reorged && !e.Compensated && (e.State == Confirmed || e.State == Final) {
-		e.Compensated = true
+	if state == Reorged && !e.Compensated && e.delivered {
+		// Only an observation the balance already counted earns a
+		// reversal; a pending entry never became spendable.
 		compensate = -e.Delta
 	}
-	if state == Reorged {
-		e.Compensated = true
-	}
 	e.State = state
+	if e.State == Confirmed || e.State == Final {
+		e.delivered = true
+	}
 	l.entries[key] = e
 	return compensate, nil
+}
+
+// MarkCompensated records that the host applied the inverse business
+// operation for a reorged entry: the entry stops answering its
+// compensation amount, and its delta stays excluded from spendable
+// balances. Only a reorged entry can be compensated; marking twice is a
+// no-op.
+func (l *Ledger) MarkCompensated(key EventKey) error {
+	e, ok := l.entries[key]
+	if !ok {
+		return errors.New("entry not found")
+	}
+	if e.State != Reorged {
+		return errors.New("only a reorged entry can be compensated")
+	}
+	if e.Compensated {
+		return nil
+	}
+	e.Compensated = true
+	l.entries[key] = e
+	return nil
 }
 
 func observationRank(s ObservationState) int {
