@@ -95,6 +95,35 @@ func TestNetworkSubmitTimeoutStaysOpen(t *testing.T) {
 	}
 }
 
+// TestNetworkSubmitAlreadyAcceptedStaysOpen pins the "already known" /
+// "nonce too low" family: the node refuses the bytes because it (or a
+// sibling endpoint) already holds them, or their nonce is already
+// consumed — usually an earlier broadcast of the very same record whose
+// reply was lost. The bytes may already be on chain, so the refusal must
+// classify as an open outcome to reconcile, not an internal failure a
+// caller would end the record on.
+func TestNetworkSubmitAlreadyAcceptedStaysOpen(t *testing.T) {
+	for _, msg := range []string{
+		"already known",
+		"transaction already imported",
+		"nonce too low",
+	} {
+		fake := newFakeClient(1)
+		fake.fail("send_transaction", errors.New(msg))
+		n := testNetwork(t, fake)
+		_, err := n.Submit(context.Background(), signedTxFixture(t))
+		if err == nil {
+			t.Fatalf("msg %q: Submit must still report the refusal", msg)
+		}
+		if cat, ok := cherrs.CategoryOf(err); !ok || cat != cherrs.TransactionStatusUnknown {
+			t.Errorf("msg %q: err = %v, want transaction status unknown", msg, err)
+		}
+		if !errors.Is(err, cherrs.ErrTransactionStatusUnknown) {
+			t.Errorf("msg %q: err must match the status unknown sentinel: %v", msg, err)
+		}
+	}
+}
+
 func TestNetworkReceiptIncluded(t *testing.T) {
 	fake := newFakeClient(1)
 	fake.withReceipt(txHashFixture, &types.Receipt{

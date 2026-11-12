@@ -36,14 +36,39 @@ func (n *Network) Submit(ctx context.Context, signed []byte) (string, error) {
 	ctx, cancel := n.withTimeout(ctx)
 	defer cancel()
 	n.stats.countRequest()
+	var raw error
 	err := n.pool.call(ctx, n.id.String(), n.opBase+".send_transaction", func(c rpcClient) error {
-		return c.SendTransaction(ctx, &tx)
+		raw = c.SendTransaction(ctx, &tx)
+		return raw
 	})
 	if err != nil {
 		n.stats.countError()
+		// The node refuses the bytes because it (or another node) already
+		// has them, or their nonce is already consumed: usually an
+		// earlier broadcast of the very same record whose reply was lost.
+		// The bytes may already be on chain, so the outcome is open, not
+		// a decisive rejection — a caller must reconcile, not fail (spec
+		// §14.3).
+		if broadcastAlreadyAccepted(raw) {
+			return "", of(cherrs.TransactionStatusUnknown, n.opBase+".send_transaction", n.id.String(), raw)
+		}
 		return "", err
 	}
 	return tx.Hash().Hex(), nil
+}
+
+// broadcastAlreadyAccepted reports whether a broadcast rejection means
+// the transaction bytes (or their nonce) are already in flight or mined.
+// Nodes phrase these refusals as free-form message text on a generic
+// server-error code; the phrases are the cross-node convention.
+func broadcastAlreadyAccepted(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "already known") ||
+		strings.Contains(msg, "already imported") ||
+		strings.Contains(msg, "nonce too low")
 }
 
 // Receipt reports the transaction's inclusion outcome (spec §7.8):
