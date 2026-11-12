@@ -59,6 +59,14 @@ func NewLocalDevSigner(env string, key *ecdsa.PrivateKey, accounts ...signer.Acc
 	if err := list.Validate(); err != nil {
 		return nil, fmt.Errorf("evm: local development signer: %w", err)
 	}
+	// The key is secp256k1: every allowed pair is an EVM pair. A ref of
+	// another family would authorize signatures this key cannot answer
+	// for (spec §12.3: 签名器应能限制可用网络和账户).
+	for _, ref := range list {
+		if ref.Network.Family != identifiers.FamilyEVM {
+			return nil, fmt.Errorf("evm: local development signer: account ref family %s does not match the evm key", ref.Network.Family)
+		}
+	}
 	account, err := DevKeyAddress(key)
 	if err != nil {
 		return nil, fmt.Errorf("evm: local development signer: %w", err)
@@ -86,9 +94,6 @@ func NewLocalDevSigner(env string, key *ecdsa.PrivateKey, accounts ...signer.Acc
 		},
 	}
 	for _, ref := range list {
-		if ref.Network.Family != identifiers.FamilyEVM {
-			continue
-		}
 		name := strings.NewReplacer("/", "_", ":", "_").Replace(ref.Network.String() + "-" + strings.ToLower(ref.Address.Value))
 		path := filepath.Join(os.TempDir(), "chame-evm-writer-"+name+".lock")
 		f, e := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0600)

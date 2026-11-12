@@ -6,6 +6,7 @@ import (
 	"crypto/ed25519"
 	"encoding/hex"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/gagliardetto/solana-go/base58"
@@ -113,6 +114,26 @@ func TestLocalDevSignerRequiresOwnAccount(t *testing.T) {
 	}
 	if _, err := NewLocalDevSigner(config.EnvDevelopment, devKey(t), otherRef); err == nil {
 		t.Errorf("allow list without the key address accepted")
+	}
+}
+
+// A ref of another family would authorize signatures the ed25519 key
+// cannot answer for: construction refuses the whole list.
+func TestLocalDevSignerRefusesOtherFamily(t *testing.T) {
+	evmAddr, err := identifiers.NewEVMAddress("0x0000000000000000000000000000000000000001")
+	if err != nil {
+		t.Fatalf("address: %v", err)
+	}
+	evmRef, err := signer.NewAccountRef(
+		identifiers.NetworkID{Family: identifiers.FamilyEVM, Name: "mainnet", ChainID: "1"},
+		evmAddr,
+	)
+	if err != nil {
+		t.Fatalf("ref: %v", err)
+	}
+	_, err = NewLocalDevSigner(config.EnvDevelopment, devKey(t), devAccountRef(t), evmRef)
+	if err == nil || !strings.Contains(err.Error(), "does not match the solana key") {
+		t.Fatalf("cross-family allow list accepted: %v", err)
 	}
 }
 

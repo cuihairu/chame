@@ -50,6 +50,14 @@ func NewLocalDevSigner(env string, key ed25519.PrivateKey, accounts ...signer.Ac
 	if err := list.Validate(); err != nil {
 		return nil, fmt.Errorf("solana: local development signer: %w", err)
 	}
+	// The key is ed25519: every allowed pair is a Solana pair. A ref of
+	// another family would authorize signatures this key cannot answer
+	// for (spec §12.3: 签名器应能限制可用网络和账户).
+	for _, ref := range list {
+		if ref.Network.Family != identifiers.FamilySolana {
+			return nil, fmt.Errorf("solana: local development signer: account ref family %s does not match the solana key", ref.Network.Family)
+		}
+	}
 	account, err := identifiers.NewSolanaAddress(base58.Encode(key.Public().(ed25519.PublicKey)))
 	if err != nil {
 		return nil, fmt.Errorf("solana: local development signer: %w", err)

@@ -165,6 +165,30 @@ func TestLocalDevSignerRequiresOwnAccount(t *testing.T) {
 	devSigner(t, config.EnvDevelopment, devAccountRef(t), multi)
 }
 
+// A ref of another family would authorize signatures the secp256k1 key
+// cannot answer for: construction refuses the whole list.
+func TestLocalDevSignerRefusesOtherFamily(t *testing.T) {
+	sol, err := identifiers.NewSolanaAddress("4wBqpZM9xaSheZzJSMawUKKwhdpChKbZ5eu5ky4Vigw")
+	if err != nil {
+		t.Fatalf("address: %v", err)
+	}
+	solRef, err := signer.NewAccountRef(
+		identifiers.NetworkID{Family: identifiers.FamilySolana, Name: "mainnet-beta", ChainID: "solana"},
+		sol,
+	)
+	if err != nil {
+		t.Fatalf("ref: %v", err)
+	}
+	key, err := DevKeyFromHex(devKeyHex)
+	if err != nil {
+		t.Fatalf("dev key: %v", err)
+	}
+	_, err = NewLocalDevSigner(config.EnvDevelopment, key, devAccountRef(t), solRef)
+	if err == nil || !strings.Contains(err.Error(), "does not match the evm key") {
+		t.Fatalf("cross-family allow list accepted: %v", err)
+	}
+}
+
 func TestLocalDevSignerDescriptor(t *testing.T) {
 	s := devSigner(t, config.EnvDevelopment, devAccountRef(t))
 	d := s.Descriptor()
