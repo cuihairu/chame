@@ -425,6 +425,48 @@ func TestPerModuleStopTimeoutHonored(t *testing.T) {
 	}
 }
 
+// holdingModule records the stop deadline it was granted and holds its
+// stop for exactly that long: the sequence pays what it grants.
+type holdingModule struct {
+	name     string
+	deadline time.Duration
+}
+
+func (m *holdingModule) Name() string                     { return m.name }
+func (m *holdingModule) Register(r module.Registry) error { return nil }
+func (m *holdingModule) Start(ctx context.Context) error  { return nil }
+func (m *holdingModule) Stop(ctx context.Context) error {
+	if d, ok := ctx.Deadline(); ok {
+		m.deadline = time.Until(d)
+	}
+	<-ctx.Done()
+	return ctx.Err()
+}
+
+// The overall shutdown timeout caps the whole stop sequence, not each
+// stop: three modules willing to hold their full stop budgets against a
+// small overall budget must not spend that budget three times over.
+func TestStopSequenceSharesOneShutdownBudget(t *testing.T) {
+	const budget = 100 * time.Millisecond
+	var ms []*holdingModule
+	rt := New(WithShutdownTimeout(budget))
+	for _, name := range []string{"a", "b", "c"} {
+		m := &holdingModule{name: name}
+		ms = append(ms, m)
+		_ = rt.Register(m, module.Info{StopTimeout: time.Hour})
+	}
+	_ = rt.Start(context.Background())
+	begin := time.Now()
+	_ = rt.Stop(context.Background())
+	elapsed := time.Since(begin)
+	// The old behavior granted the full budget per module and the
+	// sequence ran three times over. The first stop may consume all of
+	// it; scheduling slack bounds the rest.
+	if elapsed > budget+50*time.Millisecond {
+		t.Errorf("stop took %s against a %s shutdown budget", elapsed, budget)
+	}
+}
+
 // blockingModule honors its stop context: a module that respects the
 // deadline cannot block the shutdown sequence.
 type blockingModule struct {

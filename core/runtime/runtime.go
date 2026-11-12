@@ -392,11 +392,17 @@ func (r *Runtime) stopStarted(phase string) []error {
 	r.mu.Unlock()
 
 	var errs []error
+	deadline := time.Now().Add(budget)
 	for i := len(started) - 1; i >= 0; i-- {
 		n := started[i]
+		// The overall shutdown timeout caps the whole sequence, not each
+		// stop: what earlier stops consumed is gone, so a chain of
+		// slow stops cannot spend the budget several times over (spec
+		// §4.5). Once it is spent, the remaining stops get none.
+		remaining := time.Until(deadline)
 		timeout := n.info.StopTimeout
-		if timeout <= 0 || timeout > budget {
-			timeout = budget
+		if timeout <= 0 || timeout > remaining {
+			timeout = remaining
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), timeout)
 		mlog := logging.WithModule(r.logger, n.mod.Name())
