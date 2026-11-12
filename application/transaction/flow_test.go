@@ -305,6 +305,43 @@ func TestFlowRecordsUnknownWhenDispatchIsUndecided(t *testing.T) {
 // TestFlowFailsTheRecordOnADecisiveDispatch pins the other side: a node
 // that refused the bytes has answered, so the record ends and the claim
 // is released.
+// A transient stop leaves the record created, and the drive must hand
+// its reservation back: the retry that follows charges the budget once,
+// not twice. The day budget here is the same size as one payout, so a
+// leaked hold would deny the retry outright.
+func TestDriveTransientStopReturnsBudget(t *testing.T) {
+	tr := &fakeTransactor{
+		signed:     []byte{2},
+		ref:        "0xref",
+		prepareErr: cherrs.New(cherrs.RequestTimeout, "test.prepare", "the node stopped answering"),
+	}
+	audit := &auditMemory{}
+	repo := memory.New()
+	f, _ := txapp.NewFlow(repo, tr,
+		txapp.WithInternalControls(nil, &txapp.Limit{Single: 9, Daily: 9}, audit, controlRequest))
+	tx, err := f.Begin(context.Background(), flowScope(), "budget-retry", flowSeed("tx-budget"))
+	if err != nil {
+		t.Fatalf("begin: %v", err)
+	}
+
+	if _, err := f.Drive(context.Background(), tx.ID); err == nil {
+		t.Fatal("the transient stop must surface to the caller")
+	}
+	stored, err := repo.Get(context.Background(), tx.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.Status != txmodel.TxCreated {
+		t.Fatalf("a transient stop must leave the record created, got %s", stored.Status)
+	}
+
+	tr.prepareErr = nil
+	out, err := f.Drive(context.Background(), tx.ID)
+	if err != nil || out.Status != txmodel.TxSubmitted {
+		t.Fatalf("the retry must charge the freed budget and submit: status=%s err=%v", out.Status, err)
+	}
+}
+
 func TestFlowFailsTheRecordOnADecisiveDispatch(t *testing.T) {
 	tr := &fakeTransactor{
 		signed:      []byte{2},

@@ -177,6 +177,10 @@ func (f *Flow) Drive(ctx context.Context, id txmodel.TransactionID) (txmodel.Tra
 	f.logger.InfoContext(ctx, "transaction drive", "op_id", tx.OperationID, "tx_id", tx.ID, "idempotency_key", tx.IdempotencyKey, "stage", string(tx.Status))
 	switch tx.Status {
 	case txmodel.TxCreated:
+		// A reservation bought by the control block is handed back on
+		// every stop that leaves it unspent (below); without controls
+		// nothing was reserved.
+		release := func() {}
 		if f.approver != nil || f.limit != nil || f.audit != nil {
 			if f.controlRequest == nil {
 				return tx, errors.New("transaction: internal controls require request mapper")
@@ -186,15 +190,17 @@ func (f *Flow) Drive(ctx context.Context, id txmodel.TransactionID) (txmodel.Tra
 			result, reason := "allowed", ""
 			// Check reserves the budget: a refusal further down the line
 			// must return it, or every refused operation would consume
-			// the day's budget for nothing.
-			checked := false
-			if err := f.limit.Check(r); err != nil {
+			// the day's budget for nothing. Only the call that charged
+			// may release — a re-driven record whose reservation is still
+			// held passes the gate free.
+			charged := false
+			if c, err := f.limit.Check(r); err != nil {
 				result, reason = "denied", err.Error()
 			} else {
-				checked = true
+				charged = c
 			}
-			release := func() {
-				if checked {
+			release = func() {
+				if charged {
 					f.limit.Release(r)
 				}
 			}
@@ -225,7 +231,20 @@ func (f *Flow) Drive(ctx context.Context, id txmodel.TransactionID) (txmodel.Tra
 				return failed, ErrControlDenied
 			}
 		}
-		return f.prepare(ctx, tx)
+		out, err := f.prepare(ctx, tx)
+		if err != nil {
+			// The drive stops here. The stored record is the truth about
+			// whether this reservation bought anything: one that never
+			// left created, or was failed outright, must hand the budget
+			// back, or every transient stop would hold the day's budget
+			// for nothing. An advance write that may have landed keeps
+			// the hold — the budget errs on the side of refusing.
+			if stored, gerr := f.repo.Get(ctx, tx.ID); gerr == nil &&
+				(stored.Status == txmodel.TxCreated || stored.Status == txmodel.TxFailed) {
+				release()
+			}
+		}
+		return out, err
 	case txmodel.TxPrepared:
 		return f.authorize(ctx, tx, txmodel.Prepared{})
 	case txmodel.TxSigned:

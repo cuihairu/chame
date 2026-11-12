@@ -70,13 +70,13 @@ func TestLimitRejectsOverflowingAmount(t *testing.T) {
 		"",
 	} {
 		r := txapp.ControlRequest{Action: "payout", Amount: amount, At: time.Now()}
-		if err := l.Check(r); !errors.Is(err, txapp.ErrControlDenied) {
+		if _, err := l.Check(r); !errors.Is(err, txapp.ErrControlDenied) {
 			t.Fatalf("amount %q must be refused, got %v", amount, err)
 		}
 	}
 	// The decodable maximum is still decidable on its own merits: parsing
 	// must not be the refusal reason.
-	if err := (&txapp.Limit{}).Check(txapp.ControlRequest{Action: "payout", Amount: "9223372036854775807", At: time.Now()}); err != nil {
+	if _, err := (&txapp.Limit{}).Check(txapp.ControlRequest{Action: "payout", Amount: "9223372036854775807", At: time.Now()}); err != nil {
 		t.Fatalf("max int64 must still parse: %v", err)
 	}
 	t.Log("TestLimitRejectsOverflowingAmount: PASS")
@@ -86,30 +86,62 @@ func TestLimitReleaseReturnsBudget(t *testing.T) {
 	l := &txapp.Limit{Single: 6, Daily: 10}
 	day := time.Date(2026, 11, 12, 12, 0, 0, 0, time.UTC)
 	r := txapp.ControlRequest{Action: "payout", Amount: "6", At: day}
-	if err := l.Check(r); err != nil {
-		t.Fatalf("first check: %v", err)
+	if charged, err := l.Check(r); err != nil || !charged {
+		t.Fatalf("first check must charge: charged=%v err=%v", charged, err)
 	}
-	if err := l.Check(r); !errors.Is(err, txapp.ErrControlDenied) {
+	if _, err := l.Check(r); !errors.Is(err, txapp.ErrControlDenied) {
 		t.Fatalf("the day budget must be exhausted, got %v", err)
 	}
 	l.Release(r)
-	if err := l.Check(r); err != nil {
-		t.Fatalf("released budget must be usable again: %v", err)
+	if charged, err := l.Check(r); err != nil || !charged {
+		t.Fatalf("released budget must be usable again: charged=%v err=%v", charged, err)
 	}
 	t.Log("TestLimitReleaseReturnsBudget: PASS")
+}
+
+// A record re-driven while its reservation is live passes the gate free:
+// a transient stop must not stack a second charge on the day budget, and
+// only the drive that charged may hand the reservation back.
+func TestLimitRecheckDoesNotStackCharge(t *testing.T) {
+	l := &txapp.Limit{Single: 9, Daily: 9}
+	at := time.Date(2026, 11, 13, 12, 0, 0, 0, time.UTC)
+	r := txapp.ControlRequest{Action: "payout", IdempotencyKey: "tx-1", Amount: "9", At: at}
+	if charged, err := l.Check(r); err != nil || !charged {
+		t.Fatalf("first check must charge: charged=%v err=%v", charged, err)
+	}
+	if charged, err := l.Check(r); err != nil || charged {
+		t.Fatalf("the live reservation must pass free: charged=%v err=%v", charged, err)
+	}
+	// The budget is charged once: a different record of the same size is
+	// denied while the first holds it.
+	if _, err := l.Check(txapp.ControlRequest{Action: "payout", IdempotencyKey: "tx-2", Amount: "9", At: at}); !errors.Is(err, txapp.ErrControlDenied) {
+		t.Fatalf("the day budget must be spent once, got %v", err)
+	}
+	// Handing the reservation back frees exactly one charge.
+	l.Release(r)
+	if _, err := l.Check(txapp.ControlRequest{Action: "payout", IdempotencyKey: "tx-2", Amount: "9", At: at}); err != nil {
+		t.Fatalf("released budget must be usable again: %v", err)
+	}
+	// A repeat release releases nothing: the reservation is not live, and
+	// the day budget must not go negative.
+	l.Release(r)
+	if _, err := l.Check(txapp.ControlRequest{Action: "payout", IdempotencyKey: "tx-3", Amount: "9", At: at}); !errors.Is(err, txapp.ErrControlDenied) {
+		t.Fatalf("a spent budget must not come back on a repeat release, got %v", err)
+	}
+	t.Log("TestLimitRecheckDoesNotStackCharge: PASS")
 }
 
 func TestLimitDayRolloverResetsBudget(t *testing.T) {
 	l := &txapp.Limit{Daily: 10}
 	day1 := time.Date(2026, 11, 12, 23, 0, 0, 0, time.UTC)
 	day2 := day1.Add(2 * time.Hour)
-	if err := l.Check(txapp.ControlRequest{Action: "payout", Amount: "10", At: day1}); err != nil {
+	if _, err := l.Check(txapp.ControlRequest{Action: "payout", Amount: "10", At: day1}); err != nil {
 		t.Fatalf("day one check: %v", err)
 	}
-	if err := l.Check(txapp.ControlRequest{Action: "payout", Amount: "1", At: day1}); !errors.Is(err, txapp.ErrControlDenied) {
+	if _, err := l.Check(txapp.ControlRequest{Action: "payout", Amount: "1", At: day1}); !errors.Is(err, txapp.ErrControlDenied) {
 		t.Fatalf("day one budget must be exhausted, got %v", err)
 	}
-	if err := l.Check(txapp.ControlRequest{Action: "payout", Amount: "10", At: day2}); err != nil {
+	if _, err := l.Check(txapp.ControlRequest{Action: "payout", Amount: "10", At: day2}); err != nil {
 		t.Fatalf("a new UTC day must start from a fresh budget: %v", err)
 	}
 	t.Log("TestLimitDayRolloverResetsBudget: PASS")
