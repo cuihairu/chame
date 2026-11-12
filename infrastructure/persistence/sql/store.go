@@ -34,6 +34,42 @@ amount_raw, amount_decimals, amount_asset,
 chain_hash, chain_data,
 created_at, updated_at`
 
+// DefaultMaxOpenConns bounds the pool when the configuration does not
+// name a size.
+const DefaultMaxOpenConns = 16
+
+// PoolConfig tunes the underlying database/sql pool. Zero values take
+// the defaults.
+type PoolConfig struct {
+	// MaxOpen caps the number of open connections. Zero uses
+	// DefaultMaxOpenConns.
+	MaxOpen int
+	// MaxIdle keeps idle connections open for reuse. Zero matches
+	// MaxOpen — database/sql's own default of 2 would churn connections
+	// under any real burst; a negative value disables idle retention.
+	MaxIdle int
+	// ConnMaxLifetime retires connections older than this, so a
+	// long-running process does not pin one database backend across
+	// restarts and load-balancer rebalances. Zero keeps connections
+	// indefinitely.
+	ConnMaxLifetime time.Duration
+}
+
+func (c PoolConfig) withDefaults() PoolConfig {
+	if c.MaxOpen <= 0 {
+		c.MaxOpen = DefaultMaxOpenConns
+	}
+	// Zero (unset) matches the open cap; only an explicitly negative
+	// value disables idle retention.
+	if c.MaxIdle == 0 || c.MaxIdle > c.MaxOpen {
+		c.MaxIdle = c.MaxOpen
+	}
+	if c.MaxIdle < 0 {
+		c.MaxIdle = 0
+	}
+	return c
+}
+
 // Store is a PostgreSQL-backed transaction.Repository (ADR-0002). It is
 // safe for concurrent use; all coordination between instances happens
 // through the database. Construct with Open (or New around an existing
@@ -42,13 +78,25 @@ type Store struct {
 	db *sql.DB
 }
 
-// Open connects to the given PostgreSQL DSN with the pgx stdlib driver.
+// Open connects to the given PostgreSQL DSN with the pgx stdlib driver,
+// using the default pool size.
 func Open(ctx context.Context, dsn string) (*Store, error) {
+	return OpenWithPool(ctx, dsn, PoolConfig{})
+}
+
+// OpenWithPool connects to the given PostgreSQL DSN and tunes the
+// connection pool per cfg.
+func OpenWithPool(ctx context.Context, dsn string, cfg PoolConfig) (*Store, error) {
 	db, err := sql.Open(driverName, dsn)
 	if err != nil {
 		return nil, cherrs.New(cherrs.InvalidConfiguration, "transaction.sql.open", "%v", err)
 	}
-	db.SetMaxOpenConns(16)
+	pool := cfg.withDefaults()
+	db.SetMaxOpenConns(pool.MaxOpen)
+	db.SetMaxIdleConns(pool.MaxIdle)
+	if pool.ConnMaxLifetime > 0 {
+		db.SetConnMaxLifetime(pool.ConnMaxLifetime)
+	}
 	if err := db.PingContext(ctx); err != nil {
 		_ = db.Close()
 		return nil, cherrs.New(cherrs.NetworkUnavailable, "transaction.sql.ping", "%v", err)

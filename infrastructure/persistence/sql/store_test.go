@@ -97,6 +97,33 @@ func reset(t *testing.T, store *sql.Store) {
 	}
 }
 
+// OpenWithPool tunes the underlying pool per configuration; Open keeps
+// the defaults.
+func TestOpenWithPoolTunesThePool(t *testing.T) {
+	ctx := context.Background()
+	store, err := sql.OpenWithPool(ctx, testDSN(t),
+		sql.PoolConfig{MaxOpen: 3, MaxIdle: 1, ConnMaxLifetime: time.Minute})
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+
+	stats := store.DB().Stats()
+	// database/sql exposes only the configured open cap; the idle
+	// normalization is asserted in-package on PoolConfig.withDefaults.
+	if stats.MaxOpenConnections != 3 {
+		t.Fatalf("pool = open %d, want 3", stats.MaxOpenConnections)
+	}
+	defaults, err := sql.Open(ctx, testDSN(t))
+	if err != nil {
+		t.Fatalf("open defaults: %v", err)
+	}
+	t.Cleanup(func() { _ = defaults.Close() })
+	if got := defaults.DB().Stats().MaxOpenConnections; got != sql.DefaultMaxOpenConns {
+		t.Fatalf("default pool = %d, want %d", got, sql.DefaultMaxOpenConns)
+	}
+}
+
 func TestStoreMigrateIsIdempotent(t *testing.T) {
 	dsn := testDSN(t)
 	ctx := context.Background()
