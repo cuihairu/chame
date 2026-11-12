@@ -311,6 +311,39 @@ func TestLogSourceDefaults(t *testing.T) {
 	}
 }
 
+// The first poll after a fresh cursor scans only the default recent
+// window (1000 blocks): a full-range FilterLogs against a long-running
+// chain would overrun every node's result cap. Later polls read forward
+// from the cursor, unbounded by the window.
+func TestLogSourceFirstPollBoundsWindow(t *testing.T) {
+	fake := newFakeClient(1)
+	fake.blockNumber = 101_010
+	windowHash := fake.withBlock(101_009, common.HexToHash("0x"+strings.Repeat("11", 32)))
+	src := NewLogSource(testNetwork(t, fake), LogSourceConfig{Depth: 1})
+
+	_, cursor, err := src.Poll(context.Background(), event.Cursor{Network: src.Network(), SourceType: src.Type()})
+	if err != nil {
+		t.Fatalf("Poll: %v", err)
+	}
+	q := fake.capturedQueries()
+	// The window end is 101_009; the default first window is 1000 blocks.
+	if len(q) != 1 || q[0].FromBlock.Uint64() != 100_010 || q[0].ToBlock.Uint64() != 101_009 {
+		t.Fatalf("first query = %+v, want the bounded window 100010..101009", q)
+	}
+	if cursor.BlockHeight != 101_009 || cursor.BlockHash != windowHash {
+		t.Fatalf("cursor = %d %s, want 101009 %s", cursor.BlockHeight, cursor.BlockHash, windowHash)
+	}
+
+	// The cursor has a height now: the next poll reads forward from it,
+	// and with nothing new keeps the cursor without querying again.
+	if _, _, err := src.Poll(context.Background(), cursor); err != nil {
+		t.Fatalf("second Poll: %v", err)
+	}
+	if got := fake.capturedQueries(); len(got) != 1 {
+		t.Fatalf("second poll queried %+v, want none past the cursor", got[len(got)-1:])
+	}
+}
+
 func TestNetworkLogsCarryBlockHash(t *testing.T) {
 	fake := newFakeClient(1)
 	emitter := common.HexToAddress("0x00000000000000000000000000000000000000aa")

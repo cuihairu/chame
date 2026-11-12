@@ -24,6 +24,11 @@ const (
 	defaultPollDepth = 1
 	// defaultFinalityDepth is the depth at which a log reaches final.
 	defaultFinalityDepth = 12
+	// defaultFirstWindow bounds the first poll after a fresh cursor: a
+	// source joining a running chain observes a recent window, not the
+	// chain's whole history (this is a live source, not a backfill
+	// service).
+	defaultFirstWindow = 1000
 )
 
 // anonymousLogType is the normalized type for a log without a signature
@@ -48,6 +53,11 @@ type LogSourceConfig struct {
 	// FinalityDepth is the depth at which an event is final (ADR-0006).
 	// Default 12.
 	FinalityDepth uint64
+	// FirstWindow caps the block range the first poll after a fresh
+	// (zero-height) cursor scans: on a chain older than the window, the
+	// prefix before the window is out of scope — live subscription, not
+	// historical backfill. Default 1000.
+	FirstWindow uint64
 }
 
 func (c LogSourceConfig) withDefaults() LogSourceConfig {
@@ -56,6 +66,9 @@ func (c LogSourceConfig) withDefaults() LogSourceConfig {
 	}
 	if c.FinalityDepth == 0 {
 		c.FinalityDepth = defaultFinalityDepth
+	}
+	if c.FirstWindow == 0 {
+		c.FirstWindow = defaultFirstWindow
 	}
 	return c
 }
@@ -96,6 +109,13 @@ func (s *LogSource) Poll(ctx context.Context, cursor event.Cursor) ([]event.Even
 	}
 	end := head - s.cfg.Depth
 	start := cursor.BlockHeight + 1
+	if cursor.BlockHeight == 0 && end >= s.cfg.FirstWindow {
+		// A fresh cursor joins a running chain: the first poll observes
+		// only the configured recent window, never the whole history —
+		// a full-range FilterLogs against a long-running chain would
+		// overrun every node's result cap before answering.
+		start = end + 1 - s.cfg.FirstWindow
+	}
 	if end < start {
 		return nil, cursor, nil
 	}
