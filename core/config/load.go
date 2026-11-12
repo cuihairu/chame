@@ -259,24 +259,30 @@ func recordOverrides(before *Config, after *Config, sources map[string]Source) {
 // expandEnvRefs replaces ${VAR} references in file bytes with the
 // environment value (spec §5.3 uses ${EVM_RPC_URL} in rpc_urls). A
 // missing variable expands to the empty string; the URL validation then
-// rejects the unusable value with its normal message.
+// rejects the unusable value with its normal message. The scan reads
+// the file bytes only: a value that itself contains a reference (a
+// self-referencing or mutually referencing variable) is written
+// verbatim, so expansion can never re-enter itself and loop forever.
 func expandEnvRefs(raw []byte, getenv func(string) string) []byte {
 	s := string(raw)
+	var out strings.Builder
 	for {
 		i := strings.Index(s, "${")
 		if i < 0 {
+			out.WriteString(s)
 			break
 		}
 		j := strings.Index(s[i:], "}")
 		if j < 0 {
+			out.WriteString(s)
 			break
 		}
 		name := s[i+2 : i+j]
-		val := ""
+		out.WriteString(s[:i])
 		if name != "" {
-			val = getenv(name)
+			out.WriteString(getenv(name))
 		}
-		s = s[:i] + val + s[i+j+1:]
+		s = s[i+j+1:]
 	}
-	return []byte(s)
+	return []byte(out.String())
 }
