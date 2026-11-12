@@ -53,8 +53,8 @@ type fakeSource struct {
 
 func newFakeSource(net identifiers.NetworkID, srcType event.SourceType) *fakeSource {
 	return &fakeSource{
-		net:     net,
-		srcType: srcType,
+		net:        net,
+		srcType:    srcType,
 		chain:      map[uint64]string{},
 		blocks:     map[uint64][]event.Event{},
 		observe:    map[event.EventID]event.FinalityState{},

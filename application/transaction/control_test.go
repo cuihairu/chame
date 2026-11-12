@@ -55,6 +55,7 @@ func TestControlLimitDenied(t *testing.T) {
 	}
 	t.Log("TestControlLimitDenied: PASS")
 }
+
 // An amount string too large for int64 must be refused outright: the old
 // accumulation wrapped silently, and 2^64+1 collapsed to 1 — a payout far
 // beyond the budget passing as pocket change.
