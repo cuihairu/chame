@@ -290,7 +290,11 @@ func (f *Flow) dispatch(ctx context.Context, tx txmodel.Transaction, a txmodel.A
 		if verdict(err, cherrs.SemSubmit) {
 			return f.failRecord(ctx, tx, txmodel.TxSigned)
 		}
-		return f.advanceAndSettle(ctx, tx, txmodel.TxSigned, txmodel.TxUnknown, "", a.ChainData, txmodel.SettleBroadcast)
+		// An open outcome still carries the chain hash when the transactor
+		// knows it (a duplicate broadcast names the hash of the very bytes
+		// in flight): recording it is what gives the recovery worker
+		// something to observe (§10.4, §14.3).
+		return f.advanceAndSettle(ctx, tx, txmodel.TxSigned, txmodel.TxUnknown, ref, a.ChainData, txmodel.SettleBroadcast)
 	}
 	return f.advanceAndSettle(ctx, tx, txmodel.TxSigned, txmodel.TxSubmitted, ref, a.ChainData, txmodel.SettleBroadcast)
 }

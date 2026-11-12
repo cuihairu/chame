@@ -103,6 +103,11 @@ func TestNetworkSubmitTimeoutStaysOpen(t *testing.T) {
 // classify as an open outcome to reconcile, not an internal failure a
 // caller would end the record on.
 func TestNetworkSubmitAlreadyAcceptedStaysOpen(t *testing.T) {
+	payload := signedTxFixture(t)
+	var want types.Transaction
+	if err := want.UnmarshalBinary(payload); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
 	for _, msg := range []string{
 		"already known",
 		"transaction already imported",
@@ -111,7 +116,7 @@ func TestNetworkSubmitAlreadyAcceptedStaysOpen(t *testing.T) {
 		fake := newFakeClient(1)
 		fake.fail("send_transaction", errors.New(msg))
 		n := testNetwork(t, fake)
-		_, err := n.Submit(context.Background(), signedTxFixture(t))
+		hash, err := n.Submit(context.Background(), payload)
 		if err == nil {
 			t.Fatalf("msg %q: Submit must still report the refusal", msg)
 		}
@@ -120,6 +125,9 @@ func TestNetworkSubmitAlreadyAcceptedStaysOpen(t *testing.T) {
 		}
 		if !errors.Is(err, cherrs.ErrTransactionStatusUnknown) {
 			t.Errorf("msg %q: err must match the status unknown sentinel: %v", msg, err)
+		}
+		if hash != want.Hash().Hex() {
+			t.Errorf("msg %q: hash = %q, want the signed bytes' own hash %q (the reconciler observes by it)", msg, hash, want.Hash().Hex())
 		}
 	}
 }

@@ -37,6 +37,9 @@ type fakeTransactor struct {
 	prepareErr   error
 	authorizeErr error
 	dispatchErr  error
+	// errRef is the chain hash Dispatch reports alongside dispatchErr:
+	// an open outcome may still know the hash of the bytes in flight.
+	errRef string
 
 	// onPrepare runs inside Prepare, so a test can race the flow's
 	// conditional writes with a concurrent winner.
@@ -75,7 +78,7 @@ func (t *fakeTransactor) Dispatch(ctx context.Context, tx txmodel.Transaction, a
 	t.dispatches++
 	t.mu.Unlock()
 	if t.dispatchErr != nil {
-		return "", t.dispatchErr
+		return t.errRef, t.dispatchErr
 	}
 	return t.ref, nil
 }
@@ -274,6 +277,7 @@ func TestFlowRecordsUnknownWhenDispatchIsUndecided(t *testing.T) {
 	tr := &fakeTransactor{
 		signed:      []byte{2},
 		ref:         "0xref",
+		errRef:      "0xknown-hash",
 		dispatchErr: cherrs.New(cherrs.RequestTimeout, "test.dispatch", "the node stopped answering"),
 	}
 	f, _ := newFlow(t, tr)
@@ -288,6 +292,9 @@ func TestFlowRecordsUnknownWhenDispatchIsUndecided(t *testing.T) {
 	}
 	if out.Status != txmodel.TxUnknown {
 		t.Fatalf("status = %s, want unknown", out.Status)
+	}
+	if out.ChainHash != "0xknown-hash" {
+		t.Fatalf("chain hash = %q, want the hash the transactor named (the reconciler observes by it)", out.ChainHash)
 	}
 	_, _, _, settles, _, _ := tr.calls()
 	if len(settles) != 1 || settles[0] != txmodel.SettleBroadcast {

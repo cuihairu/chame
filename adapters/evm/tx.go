@@ -48,9 +48,11 @@ func (n *Network) Submit(ctx context.Context, signed []byte) (string, error) {
 		// earlier broadcast of the very same record whose reply was lost.
 		// The bytes may already be on chain, so the outcome is open, not
 		// a decisive rejection — a caller must reconcile, not fail (spec
-		// §14.3).
+		// §14.3). The hash comes from the signed bytes themselves, so it
+		// travels with the open outcome: without it the reconciler has
+		// nothing to observe.
 		if broadcastAlreadyAccepted(raw) {
-			return "", of(cherrs.TransactionStatusUnknown, n.opBase+".send_transaction", n.id.String(), raw)
+			return tx.Hash().Hex(), of(cherrs.TransactionStatusUnknown, n.opBase+".send_transaction", n.id.String(), raw)
 		}
 		return "", err
 	}
