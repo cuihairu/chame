@@ -81,6 +81,64 @@ func TestLimitRejectsOverflowingAmount(t *testing.T) {
 	t.Log("TestLimitRejectsOverflowingAmount: PASS")
 }
 
+func TestLimitReleaseReturnsBudget(t *testing.T) {
+	l := &txapp.Limit{Single: 6, Daily: 10}
+	day := time.Date(2026, 11, 12, 12, 0, 0, 0, time.UTC)
+	r := txapp.ControlRequest{Action: "payout", Amount: "6", At: day}
+	if err := l.Check(r); err != nil {
+		t.Fatalf("first check: %v", err)
+	}
+	if err := l.Check(r); !errors.Is(err, txapp.ErrControlDenied) {
+		t.Fatalf("the day budget must be exhausted, got %v", err)
+	}
+	l.Release(r)
+	if err := l.Check(r); err != nil {
+		t.Fatalf("released budget must be usable again: %v", err)
+	}
+	t.Log("TestLimitReleaseReturnsBudget: PASS")
+}
+
+func TestLimitDayRolloverResetsBudget(t *testing.T) {
+	l := &txapp.Limit{Daily: 10}
+	day1 := time.Date(2026, 11, 12, 23, 0, 0, 0, time.UTC)
+	day2 := day1.Add(2 * time.Hour)
+	if err := l.Check(txapp.ControlRequest{Action: "payout", Amount: "10", At: day1}); err != nil {
+		t.Fatalf("day one check: %v", err)
+	}
+	if err := l.Check(txapp.ControlRequest{Action: "payout", Amount: "1", At: day1}); !errors.Is(err, txapp.ErrControlDenied) {
+		t.Fatalf("day one budget must be exhausted, got %v", err)
+	}
+	if err := l.Check(txapp.ControlRequest{Action: "payout", Amount: "10", At: day2}); err != nil {
+		t.Fatalf("a new UTC day must start from a fresh budget: %v", err)
+	}
+	t.Log("TestLimitDayRolloverResetsBudget: PASS")
+}
+
+// The approver's refusal must not consume the day's budget: after a
+// refused record, another record of the same size still passes the gate.
+func TestControlApprovalRefusalReleasesBudget(t *testing.T) {
+	tr := &fakeTransactor{}
+	audit := &auditMemory{}
+	approved := map[string]bool{}
+	f, _ := txapp.NewFlow(memory.New(), tr, txapp.WithInternalControls(
+		approvalFunc(func(_ context.Context, r txapp.ControlRequest) (bool, error) {
+			return approved[r.IdempotencyKey], nil
+		}),
+		&txapp.Limit{Single: 9, Daily: 9}, audit, controlRequest))
+	refused := controlSeed(t, f, "refused")
+	got, err := f.Drive(context.Background(), refused.ID)
+	if !errors.Is(err, txapp.ErrControlDenied) || got.Status != txmodel.TxFailed {
+		t.Fatalf("the refusal must fail the record: got=%s err=%v", got.Status, err)
+	}
+	approved["released"] = true
+	next := controlSeed(t, f, "released")
+	got, err = f.Drive(context.Background(), next.ID)
+	if err != nil || got.Status != txmodel.TxSubmitted {
+		t.Fatalf("the refused budget must not stay consumed: got=%s err=%v", got.Status, err)
+	}
+	t.Log("TestControlApprovalRefusalReleasesBudget: PASS")
+}
+
 func TestControlAuditQueryIncludesRejectedAttempt(t *testing.T) {
 	a := &auditMemory{}
 	at := time.Now()

@@ -184,12 +184,26 @@ func (f *Flow) Drive(ctx context.Context, id txmodel.TransactionID) (txmodel.Tra
 			r := f.controlRequest(tx)
 			r.At = f.now.Now()
 			result, reason := "allowed", ""
+			// Check reserves the budget: a refusal further down the line
+			// must return it, or every refused operation would consume
+			// the day's budget for nothing.
+			checked := false
 			if err := f.limit.Check(r); err != nil {
 				result, reason = "denied", err.Error()
+			} else {
+				checked = true
+			}
+			release := func() {
+				if checked {
+					f.limit.Release(r)
+				}
 			}
 			if reason == "" && f.approver != nil {
 				ok, err := f.approver.Approve(ctx, r)
 				if err != nil {
+					// The record stays created and is driven again: the
+					// next attempt re-checks, so un-reserve now.
+					release()
 					return tx, err
 				}
 				if !ok {
@@ -198,10 +212,12 @@ func (f *Flow) Drive(ctx context.Context, id txmodel.TransactionID) (txmodel.Tra
 			}
 			if f.audit != nil {
 				if err := f.audit.Append(ctx, AuditEntry{Operator: r.Operator, Action: r.Action, IdempotencyKey: r.IdempotencyKey, Network: r.Network, Result: result, Reason: reason, At: r.At}); err != nil {
+					release()
 					return tx, err
 				}
 			}
 			if reason != "" {
+				release()
 				failed, err := f.failRecord(ctx, tx, txmodel.TxCreated)
 				if err != nil {
 					return failed, err

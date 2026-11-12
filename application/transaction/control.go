@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"math"
+	"strings"
 	"sync"
 	"time"
 
@@ -41,10 +42,14 @@ type AuditQuery struct {
 type ControlRequestFunc func(txmodel.Transaction) ControlRequest
 
 // Limit applies per-operation and UTC-day budgets to a network/action pair.
+// Check reserves the amount; Release returns it when the operation is
+// refused after the gate passed. A reserved amount that is never released
+// stays spent — the budget errs on the side of refusing.
 type Limit struct {
 	Single, Daily int64
 	mu            sync.Mutex
 	spent         map[string]int64
+	day           string
 }
 
 var ErrControlDenied = errors.New("transaction: internal control denied")
@@ -67,6 +72,16 @@ func parseAmount(s string) (int64, bool) {
 	return amount, true
 }
 
+// budgetKey addresses one (network, action, UTC day) budget bucket.
+func budgetKey(r ControlRequest, day string) string {
+	return r.Network.String() + "/" + r.Action + "/" + day
+}
+
+// Check decides whether the request fits the per-operation and UTC-day
+// budgets and, on success, reserves the amount against them. A refused
+// request reserves nothing. Call Release for a reserved request whose
+// operation does not execute (approval denied, or a later step failed
+// before the record left created): a refusal must not consume the budget.
 func (l *Limit) Check(r ControlRequest) error {
 	if l == nil {
 		return nil
@@ -75,11 +90,22 @@ func (l *Limit) Check(r ControlRequest) error {
 	if !ok {
 		return ErrControlDenied
 	}
-	key := r.Network.String() + "/" + r.Action + "/" + r.At.UTC().Format("2006-01-02")
+	day := r.At.UTC().Format("2006-01-02")
+	key := budgetKey(r, day)
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if l.spent == nil {
 		l.spent = map[string]int64{}
+	}
+	// Days roll over by UTC date: drop buckets of earlier days so the
+	// map stays bounded by the live network/action pairs.
+	if l.day != day {
+		for k := range l.spent {
+			if !strings.HasSuffix(k, "/"+day) {
+				delete(l.spent, k)
+			}
+		}
+		l.day = day
 	}
 	// The remaining budget is a subtraction, not a sum: spent+amount
 	// could overflow and pass the gate on a wrapped negative.
@@ -88,4 +114,25 @@ func (l *Limit) Check(r ControlRequest) error {
 	}
 	l.spent[key] += amount
 	return nil
+}
+
+// Release returns the amount a prior Check reserved for the same request.
+// A request whose amount cannot be parsed releases nothing — Check never
+// reserved it. Releasing below the day's spend deletes the bucket.
+func (l *Limit) Release(r ControlRequest) {
+	if l == nil {
+		return
+	}
+	amount, ok := parseAmount(r.Amount)
+	if !ok || amount <= 0 {
+		return
+	}
+	day := r.At.UTC().Format("2006-01-02")
+	key := budgetKey(r, day)
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.spent[key] -= amount
+	if l.spent[key] <= 0 {
+		delete(l.spent, key)
+	}
 }
