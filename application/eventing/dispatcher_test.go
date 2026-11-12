@@ -41,6 +41,9 @@ type fakeSource struct {
 	chain   map[uint64]string        // canonical hash per height
 	blocks  map[uint64][]event.Event // events per height (block hash field ignored; rebuilt on poll)
 	observe map[event.EventID]event.FinalityState
+	// unknownFor makes Observe answer ErrPositionUnknown: the source can
+	// no longer verify the event's position on the chain.
+	unknownFor map[event.EventID]bool
 
 	pollErr   error
 	headErr   error
@@ -52,9 +55,10 @@ func newFakeSource(net identifiers.NetworkID, srcType event.SourceType) *fakeSou
 	return &fakeSource{
 		net:     net,
 		srcType: srcType,
-		chain:   map[uint64]string{},
-		blocks:  map[uint64][]event.Event{},
-		observe: map[event.EventID]event.FinalityState{},
+		chain:      map[uint64]string{},
+		blocks:     map[uint64][]event.Event{},
+		observe:    map[event.EventID]event.FinalityState{},
+		unknownFor: map[event.EventID]bool{},
 	}
 }
 
@@ -136,6 +140,9 @@ func (s *fakeSource) Head(_ context.Context, height uint64) (string, error) {
 func (s *fakeSource) Observe(_ context.Context, ev event.Event) (event.FinalityState, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.unknownFor[ev.ID] {
+		return "", event.ErrPositionUnknown
+	}
 	if f, ok := s.observe[ev.ID]; ok {
 		return f, nil
 	}
@@ -518,6 +525,150 @@ func TestTickDeepReorgInvalidatesDownToFork(t *testing.T) {
 	// replacement pair joins them, and nothing else.
 	if len(s.deliveries) != 4 {
 		t.Fatalf("exactly the four canonical events may deliver, got %d", len(s.deliveries))
+	}
+}
+
+// A queued event whose block the source can no longer observe must not
+// hold the delivery queue forever: when the source verifies a different
+// canonical block at the event's height, the event's block was removed,
+// and the record is invalidated as reorged (§11.6 step 2 applied per
+// record).
+func TestTickInvalidatesQueuedEventOfRemovedBlock(t *testing.T) {
+	s := newSuite(t, Config{})
+	s.src.addBlock(10, "0xa", 1)
+	var id event.EventID
+	for i, ev := range s.src.blocks[10] {
+		ev.Finality = event.FinalityPending
+		s.src.blocks[10][i] = ev
+		s.src.observe[ev.ID] = event.FinalityPending
+		id = ev.ID
+	}
+	if _, err := s.disp.Tick(context.Background()); err != nil {
+		t.Fatalf("tick: %v", err)
+	}
+
+	// The block leaves the chain: the canonical hash at its height changes
+	// and the source can no longer observe the stored position. The cursor
+	// stands down (as after a full fallback rollback it holds no verified
+	// position), so the per-record check is what must fire.
+	s.src.mu.Lock()
+	s.src.chain[10] = "0xc"
+	s.src.blocks[10] = nil
+	s.src.mu.Unlock()
+	s.src.unknownFor[id] = true
+	if err := s.repo.RollbackCursor(context.Background(), event.Cursor{Network: testNet, SourceType: event.SourceEVMLog, UpdatedAt: time.Date(2026, 1, 1, 0, 5, 0, 0, time.UTC)}); err != nil {
+		t.Fatalf("roll back cursor: %v", err)
+	}
+
+	report, err := s.disp.Tick(context.Background())
+	if err != nil {
+		t.Fatalf("tick: %v", err)
+	}
+	if report.ReorgInvalidated != 1 || report.Delivered != 0 || report.Promoted != 0 {
+		t.Fatalf("the event of the removed block must be invalidated, not delivered: %+v", report)
+	}
+	got, err := s.repo.Get(context.Background(), id)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.Processing != event.ProcessingReorged {
+		t.Fatalf("processing = %s, want reorged", got.Processing)
+	}
+	if len(s.deliveries) != 0 {
+		t.Fatalf("an invalidated event must never deliver, got %d", len(s.deliveries))
+	}
+}
+
+// An unobservable event whose block the source still carries is a
+// transient verification gap, not a reorg: the record keeps waiting and
+// delivers once the observation recovers.
+func TestTickKeepsWaitingWhenBlockStillCanonical(t *testing.T) {
+	s := newSuite(t, Config{})
+	s.src.addBlock(10, "0xa", 1)
+	var id event.EventID
+	for i, ev := range s.src.blocks[10] {
+		ev.Finality = event.FinalityPending
+		s.src.blocks[10][i] = ev
+		id = ev.ID
+	}
+	// The observation cannot verify the position, but the canonical block
+	// at the height is unchanged.
+	s.src.unknownFor[id] = true
+	report, err := s.disp.Tick(context.Background())
+	if err != nil {
+		t.Fatalf("tick: %v", err)
+	}
+	if report.ReorgInvalidated != 0 || report.Delivered != 0 {
+		t.Fatalf("an unverifiable position must not invalidate or deliver: %+v", report)
+	}
+	got, err := s.repo.Get(context.Background(), id)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.Processing != event.ProcessingQueued {
+		t.Fatalf("processing = %s, want queued", got.Processing)
+	}
+
+	// The observation recovers: the wait pays off.
+	s.src.unknownFor[id] = false
+	s.src.observe[id] = event.FinalityConfirmed
+	report, err = s.disp.Tick(context.Background())
+	if err != nil {
+		t.Fatalf("tick: %v", err)
+	}
+	if report.Promoted != 1 || report.Delivered != 1 {
+		t.Fatalf("a recovered observation must promote and deliver: %+v", report)
+	}
+}
+
+// A record without a block hash (solana logs keep none) cannot be
+// verified against the chain: an unobservable position proves nothing,
+// so it keeps waiting rather than being dropped on a guess.
+func TestTickKeepsWaitingOnHashlessRecord(t *testing.T) {
+	s := newSuite(t, Config{})
+	ev := event.Event{
+		ID:            event.PositionKey(testNet, event.SourceEVMLog, "0xtx2", "", 11, 0, ""),
+		Network:       testNet,
+		SourceType:    event.SourceEVMLog,
+		TransactionID: "0xtx2",
+		BlockHash:     "",
+		BlockHeight:   11,
+		Type:          "deposit.detected",
+		At:            time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+		Observation:   event.ObservationObserved,
+		Finality:      event.FinalityPending,
+		Processing:    event.ProcessingQueued,
+	}
+	ev.CreatedAt, ev.UpdatedAt = ev.At, ev.At
+	if err := s.repo.Create(context.Background(), ev); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	s.src.unknownFor[ev.ID] = true
+
+	report, err := s.disp.Tick(context.Background())
+	if err != nil {
+		t.Fatalf("tick: %v", err)
+	}
+	if report.ReorgInvalidated != 0 || report.Delivered != 0 {
+		t.Fatalf("a hash-less record must keep waiting: %+v", report)
+	}
+	got, err := s.repo.Get(context.Background(), ev.ID)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.Processing != event.ProcessingQueued {
+		t.Fatalf("processing = %s, want queued", got.Processing)
+	}
+
+	// Confirmation lands normally once the source can observe again.
+	s.src.unknownFor[ev.ID] = false
+	s.src.observe[ev.ID] = event.FinalityConfirmed
+	report, err = s.disp.Tick(context.Background())
+	if err != nil {
+		t.Fatalf("tick: %v", err)
+	}
+	if report.Promoted != 1 || report.Delivered != 1 {
+		t.Fatalf("a confirmed hash-less record must deliver: %+v", report)
 	}
 }
 

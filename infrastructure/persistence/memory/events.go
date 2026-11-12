@@ -219,6 +219,34 @@ func (s *EventStore) MarkReorged(_ context.Context, key event.CursorKey, blockHe
 	return n, nil
 }
 
+// MarkReorgedByHash implements event.Repository: the hash-scoped sibling
+// of MarkReorged, for queued events of a removed block a cursor rollback
+// cannot reach. A hash-less record proves nothing and is never matched.
+func (s *EventStore) MarkReorgedByHash(_ context.Context, key event.CursorKey, blockHash string) (int, error) {
+	if err := key.Validate(); err != nil {
+		return 0, err
+	}
+	if blockHash == "" {
+		return 0, nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	n := 0
+	for id, ev := range s.events {
+		if ev.Network != key.Network || ev.SourceType != key.SourceType {
+			continue
+		}
+		if ev.BlockHash != blockHash || ev.Processing != event.ProcessingQueued {
+			continue
+		}
+		ev.Observation = event.ObservationReorged
+		ev.Processing = event.ProcessingReorged
+		s.events[id] = ev
+		n++
+	}
+	return n, nil
+}
+
 // WitnessedHashes implements event.Repository: the distinct non-empty
 // block hashes recorded per stored height, highest height first (§11.6
 // fork-point walk).

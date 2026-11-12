@@ -154,6 +154,13 @@ type Repository interface {
 	// business compensation is the application's decision (§11.6). It
 	// returns how many events were invalidated.
 	MarkReorged(ctx context.Context, key CursorKey, blockHeight uint64) (int, error)
+	// MarkReorgedByHash invalidates the queued events of one (network,
+	// source) that carry the given block hash (§11.6 step 2): the source
+	// verified a different canonical block at the height, so the block
+	// these events belong to was removed from the chain. Delivered events
+	// are left alone, an empty hash invalidates nothing, and the return is
+	// how many events were invalidated.
+	MarkReorgedByHash(ctx context.Context, key CursorKey, blockHash string) (int, error)
 	// WitnessedHashes returns the stored chain memory of one (network,
 	// source) strictly below the given height: every stored height that
 	// has a non-empty block hash to compare, highest first (§11.6). The

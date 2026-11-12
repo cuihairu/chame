@@ -223,6 +223,31 @@ WHERE network_family = $1 AND network_name = $2 AND network_chain_id = $3
 	return int(n), nil
 }
 
+// MarkReorgedByHash implements event.Repository: the hash-scoped sibling
+// of MarkReorged, for queued events of a removed block a cursor rollback
+// cannot reach. A hash-less record proves nothing and is never matched.
+func (s *EventStore) MarkReorgedByHash(ctx context.Context, key event.CursorKey, blockHash string) (int, error) {
+	if err := key.Validate(); err != nil {
+		return 0, err
+	}
+	if blockHash == "" {
+		return 0, nil
+	}
+	res, err := s.db.ExecContext(ctx, `UPDATE chame_events
+SET observation = 'reorged', processing = 'reorged'
+WHERE network_family = $1 AND network_name = $2 AND network_chain_id = $3
+  AND source_type = $4 AND block_hash = $5 AND processing = 'queued'`,
+		key.Network.Family, key.Network.Name, key.Network.ChainID, key.SourceType, blockHash)
+	if err != nil {
+		return 0, cherrs.New(cherrs.PersistenceFailure, "event.sql.mark_reorged_by_hash", "%v", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, cherrs.New(cherrs.PersistenceFailure, "event.sql.mark_reorged_by_hash", "%v", err)
+	}
+	return int(n), nil
+}
+
 // WitnessedHashes implements event.Repository: the distinct non-empty
 // block hashes recorded per stored height, highest height first (§11.6
 // fork-point walk).

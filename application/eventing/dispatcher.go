@@ -345,7 +345,7 @@ func (d *Dispatcher) deliverReady(ctx context.Context, src Source, report *Repor
 		}
 		// §11.4: wait for confirmation/finality per configuration.
 		if ev.Finality.Rank() < d.cfg.MinFinality.Rank() {
-			promoted, err := d.promote(ctx, src, &ev, now)
+			promoted, err := d.promote(ctx, src, &ev, now, report)
 			if err != nil {
 				return err
 			}
@@ -376,12 +376,18 @@ func (d *Dispatcher) deliverReady(ctx context.Context, src Source, report *Repor
 // reports whether the event reached the requirement, and leaves the
 // promoted state on the record so the handler sees what was persisted
 // (spec §11.4). An observation failure is transient: the event stays
-// queued for the next tick.
-func (d *Dispatcher) promote(ctx context.Context, src Source, ev *event.Event, now time.Time) (bool, error) {
+// queued for the next tick — unless the source can prove the event's
+// block left the chain, in which case the record is invalidated as
+// reorged instead of holding the queue forever (§11.6).
+func (d *Dispatcher) promote(ctx context.Context, src Source, ev *event.Event, now time.Time, report *Report) (bool, error) {
 	finality, err := src.Observe(ctx, *ev)
 	if err != nil {
 		if errors.Is(err, event.ErrPositionUnknown) {
-			return false, nil // position cannot be verified yet: keep waiting
+			// The position cannot be verified right now. That is either
+			// transient or the event's block was removed: verify the
+			// height against the source before waiting another tick.
+			d.checkEventChain(ctx, src, ev, now, report)
+			return false, nil
 		}
 		return false, fmt.Errorf("observe %s: %w", ev.ID, err)
 	}
@@ -396,6 +402,46 @@ func (d *Dispatcher) promote(ctx context.Context, src Source, ev *event.Event, n
 	}
 	ev.Finality = finality
 	return ev.Finality.Rank() >= d.cfg.MinFinality.Rank(), nil
+}
+
+// checkEventChain invalidates a queued event the source can no longer
+// observe when the canonical block at the event's height carries a
+// different hash: the event belongs to a removed chain, and waiting
+// would hold the delivery queue forever (§11.6 step 2 applied per
+// record). An unverifiable height, a matching hash, or a hash-less
+// record (solana logs keep none) proves nothing either way, and the
+// event keeps waiting.
+func (d *Dispatcher) checkEventChain(ctx context.Context, src Source, ev *event.Event, now time.Time, report *Report) {
+	if ev.BlockHash == "" {
+		return
+	}
+	hash, err := src.Head(ctx, ev.BlockHeight)
+	if err != nil || hash == ev.BlockHash {
+		return // unverifiable or still canonical: keep waiting
+	}
+	key := event.CursorKey{Network: ev.Network, SourceType: ev.SourceType}
+	invalidated, err := d.repo.MarkReorgedByHash(ctx, key, ev.BlockHash)
+	if err != nil {
+		// Invalidation is bookkeeping, not delivery: report the miss and
+		// let the next tick retry, so a store hiccup cannot stall the
+		// whole scan.
+		d.logger.Warn("cannot invalidate events of a removed block",
+			slog.String("network", key.Network.String()),
+			slog.String("source", string(key.SourceType)),
+			slog.String("hash", ev.BlockHash),
+			slog.String("err", err.Error()))
+		return
+	}
+	if invalidated == 0 {
+		return
+	}
+	report.ReorgInvalidated += invalidated
+	d.logger.Warn("events of a removed block invalidated",
+		slog.String("network", key.Network.String()),
+		slog.String("source", string(key.SourceType)),
+		slog.Uint64("height", ev.BlockHeight),
+		slog.String("hash", ev.BlockHash),
+		slog.Int("invalidated", invalidated))
 }
 
 // outcome describes one delivery attempt.

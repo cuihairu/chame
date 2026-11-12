@@ -497,6 +497,58 @@ func runReorg(t *testing.T, newStore newStoreFunc) {
 			t.Fatalf("records without a block hash are no witnesses, got %+v", sol)
 		}
 	})
+
+	t.Run("hash scoped invalidation", func(t *testing.T) {
+		// The per-record reorg check (§11.6 step 2) invalidates by block
+		// hash: the queued events of the removed block, never a delivered
+		// one, never a different block, and an empty hash compares against
+		// nothing.
+		dead := newEvent(evmNet, event.SourceEVMLog, "0xdead", "0xdead-block", 60, 0, at)
+		twin := newEvent(evmNet, event.SourceEVMLog, "0xdead2", "0xdead-block", 60, 1, at)
+		mine := newEvent(evmNet, event.SourceEVMLog, "0xmine", "0xmine-block", 61, 0, at)
+		gone := newEvent(evmNet, event.SourceEVMLog, "0xgone", "0xdead-block", 62, 0, at)
+		for _, ev := range []event.Event{dead, twin, mine, gone} {
+			mustCreate(t, repo, ev)
+		}
+		if err := repo.MarkDelivered(ctx, gone.ID, at.Add(time.Minute)); err != nil {
+			t.Fatalf("deliver: %v", err)
+		}
+
+		n, err := repo.MarkReorgedByHash(ctx, event.CursorKey{Network: evmNet, SourceType: event.SourceEVMLog}, "0xdead-block")
+		if err != nil {
+			t.Fatalf("mark reorged by hash: %v", err)
+		}
+		if n != 2 {
+			t.Fatalf("want the two queued events of the removed block, got %d", n)
+		}
+		for _, id := range []event.EventID{dead.ID, twin.ID} {
+			got, err := repo.Get(ctx, id)
+			if err != nil {
+				t.Fatalf("get: %v", err)
+			}
+			if got.Processing != event.ProcessingReorged {
+				t.Fatalf("queued events of the removed block must be reorged, got %s", got.Processing)
+			}
+		}
+		other, err := repo.Get(ctx, mine.ID)
+		if err != nil {
+			t.Fatalf("get: %v", err)
+		}
+		if other.Processing != event.ProcessingQueued {
+			t.Fatalf("a different block is untouched, got %s", other.Processing)
+		}
+		delivered, err := repo.Get(ctx, gone.ID)
+		if err != nil {
+			t.Fatalf("get: %v", err)
+		}
+		if delivered.Processing != event.ProcessingDelivered {
+			t.Fatalf("delivered events stay terminal, got %s", delivered.Processing)
+		}
+
+		if n, err := repo.MarkReorgedByHash(ctx, event.CursorKey{Network: evmNet, SourceType: event.SourceEVMLog}, ""); err != nil || n != 0 {
+			t.Fatalf("an empty hash must invalidate nothing, got %d err %v", n, err)
+		}
+	})
 }
 
 // runCursors pins §11.5: per (network, source) cursors that never move
