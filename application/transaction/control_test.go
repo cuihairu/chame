@@ -55,6 +55,32 @@ func TestControlLimitDenied(t *testing.T) {
 	}
 	t.Log("TestControlLimitDenied: PASS")
 }
+// An amount string too large for int64 must be refused outright: the old
+// accumulation wrapped silently, and 2^64+1 collapsed to 1 — a payout far
+// beyond the budget passing as pocket change.
+func TestLimitRejectsOverflowingAmount(t *testing.T) {
+	l := &txapp.Limit{Single: 5, Daily: 10}
+	for _, amount := range []string{
+		"18446744073709551617", // 2^64+1 wrapped to 1
+		"9223372036854775808",  // max int64 + 1 wrapped negative
+		"99999999999999999999",
+		"12a",
+		"-5",
+		"",
+	} {
+		r := txapp.ControlRequest{Action: "payout", Amount: amount, At: time.Now()}
+		if err := l.Check(r); !errors.Is(err, txapp.ErrControlDenied) {
+			t.Fatalf("amount %q must be refused, got %v", amount, err)
+		}
+	}
+	// The decodable maximum is still decidable on its own merits: parsing
+	// must not be the refusal reason.
+	if err := (&txapp.Limit{}).Check(txapp.ControlRequest{Action: "payout", Amount: "9223372036854775807", At: time.Now()}); err != nil {
+		t.Fatalf("max int64 must still parse: %v", err)
+	}
+	t.Log("TestLimitRejectsOverflowingAmount: PASS")
+}
+
 func TestControlAuditQueryIncludesRejectedAttempt(t *testing.T) {
 	a := &auditMemory{}
 	at := time.Now()
