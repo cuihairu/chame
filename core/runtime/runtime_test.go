@@ -448,11 +448,9 @@ func (m *holdingModule) Stop(ctx context.Context) error {
 // small overall budget must not spend that budget three times over.
 func TestStopSequenceSharesOneShutdownBudget(t *testing.T) {
 	const budget = 100 * time.Millisecond
-	var ms []*holdingModule
 	rt := New(WithShutdownTimeout(budget))
 	for _, name := range []string{"a", "b", "c"} {
 		m := &holdingModule{name: name}
-		ms = append(ms, m)
 		_ = rt.Register(m, module.Info{StopTimeout: time.Hour})
 	}
 	_ = rt.Start(context.Background())
