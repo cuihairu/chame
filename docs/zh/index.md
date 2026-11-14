@@ -10,7 +10,7 @@ hero:
       text: 快速开始
       link: /zh/quickstart
     - theme: alt
-      text: 规格（24 章）
+      text: 规格（26 章）
       link: https://github.com/cuihairu/chame/blob/main/docs/design/chame-spec.md
 
 features:
@@ -33,7 +33,7 @@ features:
 一套事件模型；加第二条链通常意味着重写对接层。Chame 把链收进适配器，游戏侧保持
 同一份契约。
 
-完整规格见 [`docs/design/chame-spec.md`](https://github.com/cuihairu/chame/blob/main/docs/design/chame-spec.md)——共 24 章，覆盖架构、
+完整规格见 [`docs/design/chame-spec.md`](https://github.com/cuihairu/chame/blob/main/docs/design/chame-spec.md)——共 26 章，覆盖架构、
 适配器、交易状态机、幂等、事件处理、签名、错误模型、可观测性、测试、CI、分期实施
 与完成定义。架构决策汇总在 [`docs/design/decisions.md`](https://github.com/cuihairu/chame/blob/main/docs/design/decisions.md)，详细 ADR
 在 [`docs/decisions/`](https://github.com/cuihairu/chame/tree/main/docs/decisions)。

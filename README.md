@@ -33,7 +33,7 @@ behind an adapter so the game side keeps one contract.
 ## Status
 
 **Phases 0–8 landed.** The full spec lives in
-[`docs/design/chame-spec.md`](docs/design/chame-spec.md) — 24 chapters covering
+[`docs/design/chame-spec.md`](docs/design/chame-spec.md) — 26 chapters covering
 architecture, adapters, transaction state machine, idempotency, event handling,
 signing, error model, observability, testing, CI, phased rollout, and a
 Definition of Done.

@@ -4,7 +4,7 @@
 
 ## 决策
 
-**链是外部资产事实的权威来源，游戏账本是游戏内可用权/物品的权威来源；只有满足游戏配置的 finality 门槛且事件仍在 canonical chain 上，链事件才可作为账本入账依据。** 查询到的余额不是游戏账本，也不自动赋予某个玩家兑换、消费或转移权。`AssetProvider` 只提供资产/余额查询，SPL holder 参数表示 token account，见 [`capability/asset/asset.go:71`](../../capability/asset/asset.go#L71)；事件 dispatcher 按配置门槛延迟投递（`MinFinality`，[`application/eventing/dispatcher.go:39`](../../application/eventing/dispatcher.go#L39)），重组失效交由业务处理（`Reorg` 回调，[`application/eventing/dispatcher.go:102`](../../application/eventing/dispatcher.go#L102)）。
+**链是外部资产事实的权威来源，游戏账本是游戏内可用权/物品的权威来源；只有满足游戏配置的 finality 门槛且事件仍在 canonical chain 上，链事件才可作为账本入账依据。** 查询到的余额不是游戏账本，也不自动赋予某个玩家兑换、消费或转移权。`AssetProvider` 只提供资产/余额查询，SPL holder 参数表示 token account，见 [`capability/asset/asset.go:71`](../../capability/asset/asset.go#L71)；事件 dispatcher 按配置门槛延迟投递（`MinFinality`，[`application/eventing/dispatcher.go:40`](../../application/eventing/dispatcher.go#L40)），重组失效交由业务处理（`Reorg` 回调，[`application/eventing/dispatcher.go:102`](../../application/eventing/dispatcher.go#L102)）。
 
 ## 规范资产身份
 

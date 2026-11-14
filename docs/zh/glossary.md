@@ -17,12 +17,12 @@
 | 事件分发器 | Event dispatcher | 轮询配置源，持久化证据与游标，推进最终性，重试失败，并在重组时回滚。 | `application/eventing/dispatcher.go:131`、`application/eventing/dispatcher.go:239` |
 | 链适配器 | Chain adapter | 把某链族的 SDK 与线上协议转换成中性能力，同时拥有族内端点池、身份校验和链记录。 | `adapters/evm/module.go:20`、`adapters/solana/module.go:20` |
 | 端点池 | Endpoint pool | 链族适配器持有的有序 RPC 端点，提供失败切换、请求超时和传输健康状态。 | `adapters/evm/pool.go:18`、`adapters/solana/pool.go:18` |
-| 观察接缝 | Observation seam | 共享恢复流程向适配器询问已记录交易当前最强链态的专用接口。 | `application/transaction/control.go:13`、`adapters/evm/reconciler.go:14` |
+| 观察接缝 | Observation seam | 共享恢复流程向适配器询问已记录交易当前最强链态的专用接口。 | `application/transaction/worker.go:29`（`Reconciler` 契约）、`adapters/evm/reconciler.go:16`（`StatusOf`） |
 | 基础设施实现 | Infrastructure implementation | 宿主装配的可替换持久化、签名和观测实现；可拥有持久存储或外部客户端。 | `infrastructure/persistence/sql/store.go:41`、`infrastructure/signer/remote/remote.go:68` |
 | SQL 仓库 | SQL repository | 交易与事件仓库的 PostgreSQL 实现，共享连接池并使用显式迁移。 | `infrastructure/persistence/sql/store.go:41`、`infrastructure/persistence/sql/events.go:18` |
-| 进程内仓库 | In-memory repository | 交易与事件的进程内状态，面向测试/示例；不持久化，也不跨实例协调。 | `infrastructure/persistence/memory/memory.go:10`、`infrastructure/persistence/memory/events.go:14` |
+| 进程内仓库 | In-memory repository | 交易与事件的进程内状态，面向测试/示例；不持久化，也不跨实例协调。 | `infrastructure/persistence/memory/memory.go:21`（`Store`）、`infrastructure/persistence/memory/events.go:14`（`EventStore`） |
 | 远端签名客户端 | Remote signing client | 外部托管或签名服务的 HTTP 集成接缝，覆盖描述、签名与健康操作。 | `infrastructure/signer/remote/remote.go:54`、`infrastructure/signer/remote/remote.go:89` |
 | Prometheus 记录器 | Prometheus recorder | 进程内指标收集器和标准库文本导出器，供宿主与压测工具使用。 | `infrastructure/observability/prometheus/recorder.go:13`、`infrastructure/observability/prometheus/exporter.go:17` |
 | 分层配置 | Layered configuration | 由代码默认值、文件、环境替换和显式覆盖合并的普通配置结构，启动前完成校验。 | `core/config/config.go:74`、`core/config/load.go:50` |
 | 可观测性契约 | Observability contract | 框架侧日志、指标、健康、错误和时钟；部署侧导出由基础设施或宿主拥有。 | `core/metrics/metrics.go:19`、`core/health/health.go:26` |
-| 合规套件 | Conformance suite | 针对适配器、事件仓库和交易仓库共同契约的共享行为套件。 | `tests/conformance/adapter/adapter.go:25`、`tests/conformance/repository/repository.go:20` |
+| 合规套件 | Conformance suite | 针对适配器、事件仓库和交易仓库共同契约的共享行为套件。 | `tests/conformance/adapter/adapter.go:25`（`Subject`）、`tests/conformance/repository/repository.go:30`（`Run`） |

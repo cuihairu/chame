@@ -21,27 +21,16 @@ export default defineConfig({
     'vulnerability-review.md',
   ],
   title: 'Chame',
-  description: 'Go game backend framework abstracting blockchains behind one runtime',
-  // Evidence links in analysis/design pages point at repository sources (.go
-  // files) and at markdown kept out of the site (detailed ADRs, spec, ops docs).
-  // They are valid repo-relative references, not site routes, so they are
-  // excluded from the dead-link check rather than rewritten.
-  ignoreDeadLinks: [
-    /\.go(#L\d+)?$/,
-    /\.\.\/\.\.\//,
-    /\.\.\/(decisions|design)\//,
-    /\.\.\/(deployment-write-model|internal-controls|production-observability|README\.zh|todo)/,
-  ],
-  head: [['link', { rel: 'icon', type: 'image/jpeg', href: `${base}images/logo.jpg` }]],
-  themeConfig: {
-    logo: `${base}images/logo.jpg`,
-    repo: 'cuihairu/chame',
-    socialLinks: [{ icon: 'github', link: 'https://github.com/cuihairu/chame' }],
-    search: { provider: 'local' },
-    locales: {
-      root: {
-        label: 'English',
-        lang: 'en',
+  // Bilingual site: root = English, Chinese pages live in docs/zh/ -> /zh/.
+  // The top-level `locales` map (not themeConfig.locales) is what makes
+  // VitePress emit a per-route <html lang> and localized site metadata; nav
+  // and sidebar live in each locale's themeConfig.
+  locales: {
+    root: {
+      label: 'English',
+      lang: 'en-US',
+      description: 'Go game backend framework abstracting blockchains behind one runtime',
+      themeConfig: {
         nav: [
           { text: 'Home', link: '/' },
           { text: 'Quick Start', link: '/quickstart' },
@@ -73,9 +62,12 @@ export default defineConfig({
           ],
         },
       },
-      zh: {
-        label: '中文',
-        lang: 'zh-CN',
+    },
+    zh: {
+      label: '中文',
+      lang: 'zh-CN',
+      description: '把区块链抽象在统一运行时之后的 Go 游戏后端框架',
+      themeConfig: {
         nav: [
           { text: '首页', link: '/zh/' },
           { text: '快速开始', link: '/zh/quickstart' },
@@ -98,5 +90,22 @@ export default defineConfig({
         },
       },
     },
+  },
+  // Evidence links in analysis/design pages point at repository sources (.go
+  // files) and at markdown kept out of the site (detailed ADRs, spec, ops docs).
+  // They are valid repo-relative references, not site routes, so they are
+  // excluded from the dead-link check rather than rewritten.
+  ignoreDeadLinks: [
+    /\.go(#L\d+)?$/,
+    /\.\.\/\.\.\//,
+    /\.\.\/(decisions|design)\//,
+    /\.\.\/(deployment-write-model|internal-controls|production-observability|README\.zh|todo)/,
+  ],
+  head: [['link', { rel: 'icon', type: 'image/jpeg', href: `${base}images/logo.jpg` }]],
+  themeConfig: {
+    logo: `${base}images/logo.jpg`,
+    repo: 'cuihairu/chame',
+    socialLinks: [{ icon: 'github', link: 'https://github.com/cuihairu/chame' }],
+    search: { provider: 'local' },
   },
 })

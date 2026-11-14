@@ -32,6 +32,19 @@ go doc github.com/cuihairu/chame/core/config
 | `transactions.enabled` | bool | 交易特性门；阶段落地前校验拒绝。 |
 | `events.enabled` | bool | 事件管线特性门。 |
 
+## 宿主侧调优（Go 代码面，不是配置键）
+
+下列调优项由组合根以 Go 代码设置，不进 YAML 配置文件。零值取内置默认。
+
+| 项 | 位置 | 默认 | 说明 |
+|---|---|---|---|
+| `LogSourceConfig.Depth` | `adapters/evm/eventsource.go:45` | `1`（`adapters/evm/eventsource.go:24`） | 确认窗口：只轮询深度至少如此的区块。 |
+| `LogSourceConfig.FinalityDepth` | `adapters/evm/eventsource.go:45` | `12`（`adapters/evm/eventsource.go:26`） | 事件达到最终的区块深度（ADR-0006）。 |
+| `LogSourceConfig.FirstWindow` | `adapters/evm/eventsource.go:45` | `1000`（`adapters/evm/eventsource.go:31`） | 限制首次（零高度游标）轮询扫描的区块范围——实时订阅，非历史回填。 |
+| `SignatureSourceConfig.Commitment` | `adapters/solana/eventsource.go:30` | 网络已配置的 commitment（`finalized`，ADR-0006） | 零值取网络默认。 |
+| `SignatureSourceConfig.Limit` | `adapters/solana/eventsource.go:30` | `1000`（`adapters/solana/eventsource.go:26`） | 签名历史分页大小。RPC 拒绝字面 `0`，因此非正值省略该参数、用节点默认分页。 |
+| `PoolConfig.MaxOpen` / `MaxIdle` / `ConnMaxLifetime` | `infrastructure/persistence/sql/store.go:43` | `16` / 与 `MaxOpen` 一致 / 未设置（`infrastructure/persistence/sql/store.go:39`） | PostgreSQL 存储的 database/sql 连接池；显式负的 `MaxIdle` 关闭空闲保持。 |
+
 ## 入口
 
 - `cmd/chame` — 二进制。

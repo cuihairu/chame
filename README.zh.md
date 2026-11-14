@@ -31,7 +31,7 @@ Chame 把链收进适配器，游戏侧保持同一份契约。
 ## 当前状态
 
 **阶段零至八已落地。** 完整规格见
-[`docs/design/chame-spec.md`](docs/design/chame-spec.md)——共 24 章，覆盖架构、
+[`docs/design/chame-spec.md`](docs/design/chame-spec.md)——共 26 章，覆盖架构、
 适配器、交易状态机、幂等、事件处理、签名、错误模型、可观测性、测试、CI、
 分期实施与完成定义。
 
