@@ -10,7 +10,7 @@ hero:
       text: Quick Start
       link: /quickstart
     - theme: alt
-      text: Spec (26 chapters)
+      text: Spec (24 chapters)
       link: https://github.com/cuihairu/chame/blob/main/docs/design/chame-spec.md
 
 features:
@@ -35,7 +35,7 @@ model; adding a second chain usually means rewriting the integration. Chame
 puts the chain behind an adapter so the game side keeps one contract.
 
 The full spec lives in [`docs/design/chame-spec.md`](https://github.com/cuihairu/chame/blob/main/docs/design/chame-spec.md) —
-26 chapters covering architecture, adapters, transaction state machine,
+24 chapters covering architecture, adapters, transaction state machine,
 idempotency, event handling, signing, error model, observability, testing, CI,
 phased rollout, and a Definition of Done. Architecture decisions are summarized
 in [`docs/design/decisions.md`](https://github.com/cuihairu/chame/blob/main/docs/design/decisions.md) with detailed ADRs under

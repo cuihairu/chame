@@ -4,7 +4,7 @@
 - Glossary: [English](/glossary.en) | [中文](/zh/glossary)
 
 Evidence in this page is pinned to repository commit
-`974749317bc9835a58c770cd9d4da73da0d8cf3d`. The six layers below describe
+`c700e30d45106e905fd22f364fc4616e74454654` or newer (anchors are re-checked when a cited line moves). The six layers below describe
 runtime responsibilities and dependency direction, not directory labels.
 
 ```text
@@ -86,10 +86,10 @@ and publishes only the flow when a transactor exists
 (`application/transaction/module.go:15`, `application/transaction/module.go:124`).
 `Flow` runs create through submit (`application/transaction/flow.go:26`);
 `Worker` scans stale statuses under leases (`application/transaction/worker.go:133`,
-`application/transaction/worker.go:211`). Eventing binds module handlers and
+`application/transaction/worker.go:237`). Eventing binds module handlers and
 polls durable sources (`application/eventing/bind.go:15`,
-`application/eventing/dispatcher.go:131`). Idempotency service checks request
-hashes and returns prior accepted responses (`application/idempotency/service.go:40`).
+`application/eventing/dispatcher.go:132`). Idempotency service checks request
+hashes and returns prior accepted responses (`application/idempotency/service.go:35`).
 Projection is an executable replay boundary with host-owned backends
 (`application/projection/projection.go:18`, `application/gameledger/contract.go:32`).
 
@@ -97,7 +97,7 @@ Projection is an executable replay boundary with host-owned backends
 loggers, and metrics; they do not choose the storage technology.
 `Worker` and `Dispatcher` are process-memory orchestration objects
 (`application/transaction/worker.go:133`,
-`application/eventing/dispatcher.go:131`). Durable state is owned by the
+`application/eventing/dispatcher.go:132`). Durable state is owned by the
 repository implementation in layer 5. The example projection ledger keeps a
 process map and is explicitly a reference contract, not host storage
 (`application/gameledger/contract.go:121`,
@@ -112,7 +112,7 @@ process map and is explicitly a reference contract, not host storage
 | `Worker` | `transaction.Repository` | memory or PostgreSQL store | `application/transaction/worker.go:138` |
 | `Worker` | `Reconciler` / `StatusQuery` | EVM or Solana `StatusOf` | `application/transaction/control.go:13`, `adapters/evm/reconciler.go:14` |
 | `Dispatcher` | `event.Source` | EVM log source or Solana signature source | `application/eventing/dispatcher.go:145`, `adapters/evm/eventsource.go:65` |
-| `Dispatcher` | `event.Repository` | memory or PostgreSQL event store | `application/eventing/dispatcher.go:131` |
+| `Dispatcher` | `event.Repository` | memory or PostgreSQL event store | `application/eventing/dispatcher.go:132` |
 | Runtime / host | module `Registry` | bound event handlers | `application/eventing/bind.go:15` |
 
 **Configuration and lifecycle.** Retry, scan interval, task timeout,
@@ -122,7 +122,7 @@ settings at `application/eventing/dispatcher.go:33`. Runtime starts and stops
 these long-running loops as registered tasks
 (`core/module/module.go:104`, `application/transaction/module.go:135`).
 Copy embedded in logs and reports is workflow-local
-(`application/transaction/worker.go:219`, `application/eventing/dispatcher.go:221`).
+(`application/transaction/worker.go:363`, `application/eventing/dispatcher.go:222`).
 
 ## 4. Chain Adapters
 
@@ -130,9 +130,9 @@ Copy embedded in logs and reports is workflow-local
 types, wire calls, identity verification, endpoint failover, event polling,
 family transaction records, and status mapping. EVM exposes module, network,
 account, asset, event, flow, and status capabilities
-(`adapters/evm/module.go:20`, `adapters/evm/network.go:32`); Solana does the
+(`adapters/evm/module.go:20`, `adapters/evm/network.go:110`); Solana does the
 same independently (`adapters/solana/module.go:20`,
-`adapters/solana/network.go:34`). Family preparation and chain records are
+`adapters/solana/network.go:146`). Family preparation and chain records are
 deliberately separate: EVM nonce/receipt mapping (`adapters/evm/nonce.go:20`,
 `adapters/evm/tx.go:15`) versus Solana blockhash windows
 (`adapters/solana/blockhash.go:20`, `adapters/solana/reconciler.go:19`).
@@ -165,12 +165,12 @@ documentation and behavior notes are the adapters' copy surface
 
 **Responsibility and implementation.** This layer supplies replaceable
 technical effects. PostgreSQL owns durable transaction and event storage plus
-versioned migrations (`infrastructure/persistence/sql/store.go:41`,
+versioned migrations (`infrastructure/persistence/sql/store.go:77`,
 `infrastructure/persistence/sql/events.go:18`,
 `infrastructure/persistence/sql/store.go:92`). Memory stores exist for tests
 and examples and say so explicitly
-(`infrastructure/persistence/memory/memory.go:10`,
-`infrastructure/persistence/memory/events.go:14`). The remote signer is an
+(`infrastructure/persistence/memory/memory.go:22`,
+`infrastructure/persistence/memory/events.go:19`). The remote signer is an
 HTTP custody integration (`infrastructure/signer/remote/remote.go:68`);
 Prometheus recorder/exporter and memory metrics are observability
 implementations (`infrastructure/observability/prometheus/recorder.go:13`,
@@ -182,20 +182,20 @@ The local-signer package is only a development skeleton
 
 | Implementation | Storage | Evidence |
 |---|---|---|
-| SQL transaction store | PostgreSQL rows via one `*sql.DB` pool | `infrastructure/persistence/sql/store.go:41`, `infrastructure/persistence/sql/store.go:56` |
-| SQL event store | PostgreSQL event/cursor rows; coordination through database constraints | `infrastructure/persistence/sql/events.go:18`, `infrastructure/persistence/sql/events.go:38` |
+| SQL transaction store | PostgreSQL rows via one `*sql.DB` pool | `infrastructure/persistence/sql/store.go:77`, `infrastructure/persistence/sql/store.go:114` |
+| SQL event store | PostgreSQL event/cursor rows; coordination through database constraints | `infrastructure/persistence/sql/events.go:18`, `infrastructure/persistence/sql/events.go:29` |
 | Memory transaction store | maps guarded by one mutex | `infrastructure/persistence/memory/memory.go:22` |
 | Memory event store | event and cursor maps guarded by one mutex | `infrastructure/persistence/memory/events.go:19` |
 | Remote signer | no local persistence; HTTP request/response to custody service | `infrastructure/signer/remote/remote.go:68`, `infrastructure/signer/remote/remote.go:130` |
 | Prometheus memory collector | process counters, gauges, histogram snapshots | `infrastructure/observability/prometheus/recorder.go:13` |
-| Memory metrics collector | process maps/gauges/histograms | `infrastructure/observability/memory/memory.go:20` |
+| Memory metrics collector | process maps/gauges/histograms | `infrastructure/observability/memory/memory.go:27` |
 
 There is no Redis, MySQL, Kafka, NATS, or file-store implementation.
 
 **Call surface.** Application workflows call repository interfaces; the host
 composition root selects this layer. SQL uses pgx through `database/sql`
 (`infrastructure/persistence/sql/store.go:18`,
-`infrastructure/persistence/sql/store.go:56`); remote signing uses HTTP
+`infrastructure/persistence/sql/store.go:114`); remote signing uses HTTP
 with a bearer token (`infrastructure/signer/remote/remote.go:18`,
 `infrastructure/signer/remote/remote.go:130`); Prometheus exposes text over
 an injected writer (`infrastructure/observability/prometheus/exporter.go:17`).
@@ -264,7 +264,7 @@ documents (`docs/.vitepress/config.ts:9`).
    have different deployment lifetimes and owners than workflow policy.** SQL
    migration runs idempotently per process start
    (`infrastructure/persistence/sql/store.go:92`), memory stores disclaim
-   cross-process coordination (`infrastructure/persistence/memory/memory.go:10`),
+   cross-process coordination (`infrastructure/persistence/memory/memory.go:22`),
    and the remote client only mediates an external signer
    (`infrastructure/signer/remote/remote.go:68`).
 6. **Host/tool/conformance code is separate because it selects concrete
@@ -304,5 +304,5 @@ tasks after modules and cancels them before modules stop
 start-time migration action (`infrastructure/persistence/sql/store.go:92`);
 adapters verify network identity before serving (`adapters/evm/module.go:223`,
 `adapters/solana/module.go:250`). Memory/tool state is intentionally
-process-scoped and ends with the process (`infrastructure/persistence/memory/memory.go:10`,
+process-scoped and ends with the process (`infrastructure/persistence/memory/memory.go:22`,
 `tools/txload/driver.go:173`).
