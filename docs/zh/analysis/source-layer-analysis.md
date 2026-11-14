@@ -37,7 +37,7 @@ Stopped` 推进；启动期失败可进入 stopping，stopped 是终态
 **配置与文案。**共享选项是 logger、clock 和 shutdown timeout
 （`core/runtime/runtime.go:64`）；进程配置来自第 7 层前的分层配置，模型在
 `core/config/config.go:74`。用户可见状态名与生命周期模型放在一起
-（`core/lifecycle/lifecycle.go:28`）；错误文案与分类错误模型放在一起
+（`core/lifecycle/lifecycle.go:30`）；错误文案与分类错误模型放在一起
 （`core/errors/errors.go:135`）。
 
 ## 2. 链无关契约
@@ -86,8 +86,8 @@ accepted 响应（`application/idempotency/service.go:35`）。投影是可执�
 （`application/transaction/worker.go:133`、
 `application/eventing/dispatcher.go:132`）。持久状态由第 5 层仓库实现拥有。
 示例投影账本使用进程 map，明确是参考契约而非宿主存储
-（`application/gameledger/contract.go:121`、
-`application/gameledger/contract.go:132`）。
+（`application/gameledger/contract.go:48`、
+`application/gameledger/contract.go:1`）。
 
 **调用面。**
 
@@ -96,8 +96,8 @@ accepted 响应（`application/idempotency/service.go:35`）。投影是可执�
 | 宿主 / 交易能力消费方 | 直接 Go 接口 | `transaction.Flow` | `application/transaction/module.go:135` |
 | 运行时任务调度 | 进程内任务函数 | `transaction.Worker.Run` | `application/transaction/module.go:141` |
 | `Worker` | `transaction.Repository` | 内存或 PostgreSQL 仓库 | `application/transaction/worker.go:138` |
-| `Worker` | `Reconciler` / `StatusQuery` | EVM 或 Solana `StatusOf` | `application/transaction/control.go:13`、`adapters/evm/reconciler.go:14` |
-| `Dispatcher` | `event.Source` | EVM 日志源或 Solana 签名源 | `application/eventing/dispatcher.go:145`、`adapters/evm/eventsource.go:65` |
+| `Worker` | `Reconciler` / `StatusQuery` | EVM 或 Solana `StatusOf` | `application/transaction/worker.go:22`、`adapters/evm/reconciler.go:14` |
+| `Dispatcher` | `event.Source` | EVM 日志源或 Solana 签名源 | `application/eventing/dispatcher.go:145`、`adapters/evm/eventsource.go:90` |
 | `Dispatcher` | `event.Repository` | 内存或 PostgreSQL 事件仓库 | `application/eventing/dispatcher.go:132` |
 | 运行时 / 宿主 | 模块 `Registry` | 绑定的事件处理器 | `application/eventing/bind.go:15` |
 
@@ -117,12 +117,12 @@ accepted 响应（`application/idempotency/service.go:35`）。投影是可执�
 `adapters/evm/network.go:110`）；Solana 独立实现同一组边界
 （`adapters/solana/module.go:20`、`adapters/solana/network.go:146`）。
 族内准备与链记录被刻意分开：EVM nonce/回执映射
-（`adapters/evm/nonce.go:20`、`adapters/evm/tx.go:15`）对应 Solana
+（`adapters/evm/nonce.go:68`、`adapters/evm/tx.go:15`）对应 Solana
 blockhash 窗口（`adapters/solana/blockhash.go:20`、
 `adapters/solana/reconciler.go:19`）。
 
 **状态。**端点池、当前身份、nonce 分配和 blockhash pin 是适配器内进程内存
-（`adapters/evm/pool.go:18`、`adapters/evm/nonce.go:20`、
+（`adapters/evm/pool.go:18`、`adapters/evm/nonce.go:84`、
 `adapters/solana/blockhash.go:20`）。持久交易历史交给仓库；链形态证据存入交易
 的 `ChainData`（`capability/transaction/transaction.go:129`、
 `adapters/solana/reconciler.go:19`）。
@@ -145,13 +145,13 @@ gagliardetto 做同样隔离（`adapters/solana/client.go:18`、
 **职责与实现。**该层提供可替换技术副作用。PostgreSQL 拥有持久交易与事件存储
 以及版本化迁移（`infrastructure/persistence/sql/store.go:77`、
 `infrastructure/persistence/sql/events.go:18`、
-`infrastructure/persistence/sql/store.go:92`）。内存存储面向测试和示例，并明确
+`infrastructure/persistence/sql/store.go:140`）。内存存储面向测试和示例，并明确
 声明这一限制（`infrastructure/persistence/memory/memory.go:22`、
 `infrastructure/persistence/memory/events.go:19`）。远端签名器是 HTTP 托管集成
 （`infrastructure/signer/remote/remote.go:68`）；Prometheus recorder/exporter
 与内存指标是观测实现
 （`infrastructure/observability/prometheus/recorder.go:13`、
-`infrastructure/observability/prometheus/exporter.go:17`）。本地签名包只是开发
+`infrastructure/observability/prometheus/exporter.go:16`）。本地签名包只是开发
 骨架（`infrastructure/signer/local/doc.go:1`）。
 
 **状态。**
@@ -162,7 +162,7 @@ gagliardetto 做同样隔离（`adapters/solana/client.go:18`、
 | SQL 事件仓库 | PostgreSQL 事件/游标行；靠数据库约束协调 | `infrastructure/persistence/sql/events.go:18`、`infrastructure/persistence/sql/events.go:29` |
 | 内存交易仓库 | 单互斥锁保护的 map | `infrastructure/persistence/memory/memory.go:22` |
 | 内存事件仓库 | 单互斥锁保护的事件与游标 map | `infrastructure/persistence/memory/events.go:19` |
-| 远端签名器 | 无本地持久化；向托管服务发起 HTTP 请求/响应 | `infrastructure/signer/remote/remote.go:68`、`infrastructure/signer/remote/remote.go:130` |
+| 远端签名器 | 无本地持久化；向托管服务发起 HTTP 请求/响应 | `infrastructure/signer/remote/remote.go:68`、`infrastructure/signer/remote/remote.go:129` |
 | Prometheus 内存采集器 | 进程计数器、gauge、直方图快照 | `infrastructure/observability/prometheus/recorder.go:13` |
 | 内存指标采集器 | 进程 map/gauge/直方图 | `infrastructure/observability/memory/memory.go:27` |
 
@@ -171,14 +171,14 @@ gagliardetto 做同样隔离（`adapters/solana/client.go:18`、
 **调用面。**业务工作流调用仓库接口；宿主组合根选择本层。SQL 通过 pgx 和
 `database/sql`（`infrastructure/persistence/sql/store.go:18`、
 `infrastructure/persistence/sql/store.go:114`）；远端签名用带 bearer token 的 HTTP
-（`infrastructure/signer/remote/remote.go:18`、
-`infrastructure/signer/remote/remote.go:130`）；Prometheus 通过注入 writer 输出
-文本（`infrastructure/observability/prometheus/exporter.go:17`）。
+（`infrastructure/signer/remote/remote.go:14`、
+`infrastructure/signer/remote/remote.go:129`）；Prometheus 通过注入 writer 输出
+文本（`infrastructure/observability/prometheus/exporter.go:16`）。
 
 **配置、协议与文案。**DSN 和服务端点是宿主输入，不属于
 `core/config.Config`。PostgreSQL DDL 内嵌并记录版本
 （`infrastructure/persistence/sql/store.go:78`、
-`infrastructure/persistence/sql/store.go:92`）；远端签名请求/响应类型是本地
+`infrastructure/persistence/sql/store.go:140`）；远端签名请求/响应类型是本地
 JSON 结构（`infrastructure/signer/remote/remote.go:80`）。运维限制写在包文档
 （`infrastructure/persistence/memory/doc.go:1`、
 `infrastructure/persistence/sql/doc.go:1`）。
@@ -192,7 +192,7 @@ JSON 结构（`infrastructure/signer/remote/remote.go:80`）。运维限制写�
 `tools/txload/driver.go:173`、`tools/txload/http.go:27`）。合规套件让适配器和
 仓库行为可校验，而不把测试绑定到单一实现
 （`tests/conformance/adapter/adapter.go:25`、
-`tests/conformance/repository/repository.go:20`）。生产 CLI 仍是骨架
+`tests/conformance/repository/repository.go:30`）。生产 CLI 仍是骨架
 （`cmd/chame/main.go:12`）。
 
 **状态与调用面。**工具状态是进程内存、channel 和 HTTP 仪表盘
@@ -214,18 +214,18 @@ JSON 结构（`infrastructure/signer/remote/remote.go:80`）。运维限制写�
 2. **中性契约单独成层：应用与适配器只依赖语义，因此不同链实现和合规套件不必
    相互导入。**交易、事件、适配器和仓库套件都面向这些接缝
    （`tests/conformance/adapter/adapter.go:25`、
-   `tests/conformance/repository/repository.go:20`）。
+   `tests/conformance/repository/repository.go:30`）。
 3. **工作流单独成层：可靠性策略跨链共享，而提交机制不共享。**Worker 只调用注入
    的 `Reconciler` 和仓库（`application/transaction/worker.go:133`），EVM 与
    Solana 分别映射自己的链证据（`adapters/evm/reconciler.go:14`、
    `adapters/solana/reconciler.go:19`）。
 4. **适配器按链族拆开：传输与恢复记录细节不可归约。**EVM 校验 chain ID 并分配
-   nonce（`adapters/evm/network.go:149`、`adapters/evm/nonce.go:20`）；Solana
+   nonce（`adapters/evm/network.go:158`、`adapters/evm/nonce.go:20`）；Solana
    校验 genesis 并固定 blockhash 窗口
-   (`adapters/solana/network.go:60`、`adapters/solana/blockhash.go:20`）。
+   (`adapters/solana/network.go:176`、`adapters/solana/blockhash.go:20`）。
 5. **基础设施单独成层：持久化、托管和指标的部署生命周期与所有者不同于工作流
    策略。**SQL 迁移在进程启动时幂等执行
-   （`infrastructure/persistence/sql/store.go:92`），内存存储声明不跨进程协调
+   （`infrastructure/persistence/sql/store.go:140`），内存存储声明不跨进程协调
    （`infrastructure/persistence/memory/memory.go:22`），远端客户端只中介外部
    签名服务（`infrastructure/signer/remote/remote.go:68`）。
 6. **宿主/工具/合规代码单独成层：它们选择具体实现和 fixture，不是又一个可复用
@@ -238,7 +238,7 @@ JSON 结构（`infrastructure/signer/remote/remote.go:80`）。运维限制写�
 
 | 概念 | 实现文件 | 配置 schema | 专属协议文件 | 文案挂载 |
 |---|---|---|---|---|
-| 运行时内核 | `core/runtime/runtime.go`、`core/module/module.go`、`core/runtime/graph.go` | `core/config/config.go:74` | 无 | `core/lifecycle/lifecycle.go:28`、`core/errors/errors.go:135` |
+| 运行时内核 | `core/runtime/runtime.go`、`core/module/module.go`、`core/runtime/graph.go` | `core/config/config.go:74` | 无 | `core/lifecycle/lifecycle.go:30`、`core/errors/errors.go:135` |
 | 链无关契约 | `capability/*`、`core/capability/capability.go` | 无 | 仅 JSON 模型 tag | 各包 `doc.go` 与校验文案 |
 | 业务工作流 | `application/transaction`、`application/eventing`、`application/idempotency`、`application/projection`、`application/gameledger` | 构造选项 | 仅存储 JSON 载荷 | 工作流日志/报告与包文档 |
 | 链适配器 | `adapters/evm`、`adapters/solana` | `adapters/evm/config.go:41`、`adapters/solana/config.go:36` | SDK 调用点；JSON 链记录 | `adapters/*/doc.go` |
@@ -258,7 +258,7 @@ JSON 结构（`infrastructure/signer/remote/remote.go:80`）。运维限制写�
 按 deadline 释放（`core/module/module.go:19`）。运行时随后在模块后调度任务、
 停模块前取消任务（`core/module/module.go:104`、
 `core/runtime/runtime.go:297`）。SQL 仓库增加启动迁移动作
-（`infrastructure/persistence/sql/store.go:92`）；适配器先校验网络身份再服务
-（`adapters/evm/module.go:223`、`adapters/solana/module.go:250`）。内存/工具状态
+（`infrastructure/persistence/sql/store.go:140`）；适配器先校验网络身份再服务
+（`adapters/evm/module.go:180`、`adapters/solana/module.go:212`）。内存/工具状态
 刻意限定进程内，随进程结束（`infrastructure/persistence/memory/memory.go:22`、
 `tools/txload/driver.go:173`）。

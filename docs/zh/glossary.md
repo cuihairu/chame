@@ -22,7 +22,7 @@
 | SQL 仓库 | SQL repository | 交易与事件仓库的 PostgreSQL 实现，共享连接池并使用显式迁移。 | `infrastructure/persistence/sql/store.go:41`、`infrastructure/persistence/sql/events.go:18` |
 | 进程内仓库 | In-memory repository | 交易与事件的进程内状态，面向测试/示例；不持久化，也不跨实例协调。 | `infrastructure/persistence/memory/memory.go:22`（`Store`）、`infrastructure/persistence/memory/events.go:19`（`EventStore`） |
 | 远端签名客户端 | Remote signing client | 外部托管或签名服务的 HTTP 集成接缝，覆盖描述、签名与健康操作。 | `infrastructure/signer/remote/remote.go:54`、`infrastructure/signer/remote/remote.go:89` |
-| Prometheus 记录器 | Prometheus recorder | 进程内指标收集器和标准库文本导出器，供宿主与压测工具使用。 | `infrastructure/observability/prometheus/recorder.go:13`、`infrastructure/observability/prometheus/exporter.go:17` |
+| Prometheus 记录器 | Prometheus recorder | 进程内指标收集器和标准库文本导出器，供宿主与压测工具使用。 | `infrastructure/observability/prometheus/recorder.go:13`、`infrastructure/observability/prometheus/exporter.go:16` |
 | 分层配置 | Layered configuration | 由代码默认值、文件、环境替换和显式覆盖合并的普通配置结构，启动前完成校验。 | `core/config/config.go:74`、`core/config/load.go:50` |
 | 可观测性契约 | Observability contract | 框架侧日志、指标、健康、错误和时钟；部署侧导出由基础设施或宿主拥有。 | `core/metrics/metrics.go:19`、`core/health/health.go:26` |
 | 合规套件 | Conformance suite | 针对适配器、事件仓库和交易仓库共同契约的共享行为套件。 | `tests/conformance/adapter/adapter.go:25`（`Subject`）、`tests/conformance/repository/repository.go:30`（`Run`） |
