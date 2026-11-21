@@ -149,6 +149,28 @@ func TestPoolContextCancelStopsFailover(t *testing.T) {
 	}
 }
 
+// TestPoolSpentBudgetReportsTimeout is the deadline twin of the cancel
+// test above: a budget that is spent before an attempt starts has to read
+// as a timeout, not as a bare context error, or a caller cannot tell a
+// slow node from a dead one.
+func TestPoolSpentBudgetReportsTimeout(t *testing.T) {
+	a := newFakeClient(1)
+	b := newFakeClient(1)
+	pool := newEndpointPool([]rpcClient{a, b}, &counters{})
+	ctx, cancel := context.WithTimeout(context.Background(), 0)
+	defer cancel()
+	err := pool.call(ctx, "evm/mainnet/1", "evm.chain_id", func(ctx context.Context, c rpcClient) error {
+		_, err := c.ChainID(ctx)
+		return err
+	})
+	if cat, ok := cherrs.CategoryOf(err); !ok || cat != cherrs.RequestTimeout {
+		t.Fatalf("err = %v, want request timeout", err)
+	}
+	if a.callCount("chain_id") != 0 || b.callCount("chain_id") != 0 {
+		t.Error("a spent budget must not reach an endpoint")
+	}
+}
+
 func TestPoolClose(t *testing.T) {
 	a := newFakeClient(1)
 	pool := newEndpointPool([]rpcClient{a}, &counters{})

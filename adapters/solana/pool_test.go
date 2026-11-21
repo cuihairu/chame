@@ -140,6 +140,25 @@ func TestPoolContextCancelStopsFailover(t *testing.T) {
 	}
 }
 
+// TestPoolSpentBudgetReportsTimeout is the deadline twin of the cancel
+// test above: a budget that is spent before an attempt starts has to read
+// as a timeout, not as a bare context error, or a caller cannot tell a
+// slow node from a dead one.
+func TestPoolSpentBudgetReportsTimeout(t *testing.T) {
+	a := newFakeClient(solanaHashFor(0x10))
+	b := newFakeClient(solanaHashFor(0x10))
+	pool := newEndpointPool([]rpcClient{a, b}, &counters{})
+	ctx, cancel := context.WithTimeout(context.Background(), 0)
+	defer cancel()
+	err := pool.call(ctx, "solana/mainnet/x", "solana.genesis_hash", genesisCall)
+	if cat, ok := cherrs.CategoryOf(err); !ok || cat != cherrs.RequestTimeout {
+		t.Fatalf("err = %v, want request timeout", err)
+	}
+	if a.callCount("genesis_hash") != 0 || b.callCount("genesis_hash") != 0 {
+		t.Error("a spent budget must not reach an endpoint")
+	}
+}
+
 func TestPoolClose(t *testing.T) {
 	a := newFakeClient(solanaHashFor(0x10))
 	pool := newEndpointPool([]rpcClient{a}, &counters{})

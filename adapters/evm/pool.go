@@ -64,7 +64,10 @@ func (p *endpointPool) call(ctx context.Context, network, op string, fn func(con
 	for i := 0; i < len(p.clients); i++ {
 		idx := (start + i) % len(p.clients)
 		if err := ctx.Err(); err != nil {
-			return err
+			// The budget can be spent before an attempt starts, and the
+			// caller must see the same category as a timeout inside a
+			// request. Cancellation passes through classify untouched.
+			return classify(op, network, err)
 		}
 		attempt := ctx
 		var cancel context.CancelFunc
