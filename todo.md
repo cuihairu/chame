@@ -183,4 +183,5 @@
 ## G2 文档再审计（2026-11-14，源 scratch/tasks/fleet-docs-audit-G2.md）
 
 - [x] G2 文档一致性面：7 条差异全部修复（P1×3：G2「24 章」→26 六处、G3 宿主侧调优参数补双语表、G4 站点 locales 提升顶层使 /zh/ 直出 `lang="zh-CN"`；P2×4：G5–G7 glossary 三条行号漂移重锚、G8 自动切换现状如实记载） — 证据：docs/审计-文档一致性.md「G2 轮（2026-11-14）」段（三桶计数+登记表+面二探针）；初筛 G1（README Phase 口径）复核后撤回，规格 §19 与 README 一致、未改 README；门禁 go build ./... + go vet ./... + go test ./... -count=1 + npm run docs:build 全绿。
+- [x] G2 补遗·规格文档自身两处不符（2026-11-21 巡检扫出，此前各轮未覆盖：spec 在 srcExclude 内不外发）：§22「首期完成定义」21 项验收框全未勾，而本文件已记「逐条核对（§22，21 项）— 3dd3a1b，308 测试」，字面读会结论「首期未交付」→ 21 框全部勾上；头部「共 27 节」与 24 个 H1 编号章（§1–§24）矛盾 → 改为「共 24 节（§1–§24）」并注明 §21 内另有 3 节 WritingBlock H1 前置材料（§25–§27）。证据：docs/审计-文档一致性.md「Addendum 2」段。 — 79f002e
 - [ ] BLOCKED P2 双语自动切换（增强项，缺用户拍板）：站点当前无浏览器语言自动识别（无 rootLocale 重定向 / navigator.language / Accept-Language 处理），受规基线=手动切换+显式语言链接；候选实现=VitePress 顶层 locales 之上加首页 JS 探测后跳 `/zh/`。缺：fleet-docs-audit-G2 总账第④段用户拍板（是否上自动跳转、哪些仓上）；拍板前默认不动。
