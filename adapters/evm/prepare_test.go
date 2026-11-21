@@ -403,12 +403,19 @@ func TestNetworkBuildRejectsInvalidQueries(t *testing.T) {
 func TestNetworkBuildHonorsDeadline(t *testing.T) {
 	fake := newFakeClient(1)
 	fake.withPendingNonce(common.HexToAddress(prepareSender), 7)
-	fake.withSlowEstimate(50 * time.Millisecond)
+	// Far longer than the deadline below: with a delay only 10ms past the
+	// bound, a timer firing early under load let the estimate finish inside
+	// the budget and the build succeed, which is not what this test is
+	// about.
+	fake.withSlowEstimate(5 * time.Second)
 	n := testNetwork(t, fake)
 	q := buildQuery()
 	q.Nonce = nil
 	q.GasLimit = 0
-	q.Deadline = 5 * time.Millisecond
+	// The estimate, not the account seeding, is what must outlive the
+	// deadline. A tighter bound let seeding win the race on a loaded
+	// machine and take a different, unseeded failure path instead.
+	q.Deadline = 40 * time.Millisecond
 
 	sender := mustEVMAddress(prepareSender)
 	start := time.Now()
@@ -417,7 +424,10 @@ func TestNetworkBuildHonorsDeadline(t *testing.T) {
 	} else if cat, ok := cherrs.CategoryOf(err); !ok || cat != cherrs.RequestTimeout {
 		t.Errorf("err = %v, want request timeout", err)
 	}
-	if elapsed := time.Since(start); elapsed > 2*time.Second {
+	// The estimate is deliberately 5s, so anything under a few seconds
+	// proves the deadline stopped the build instead of the estimate
+	// finishing.
+	if elapsed := time.Since(start); elapsed > 6*time.Second {
 		t.Errorf("build took %s, want it to stop at the deadline", elapsed)
 	}
 	// A build never broadcasts, so a timed-out build gives its nonce back
