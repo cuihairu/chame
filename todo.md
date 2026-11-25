@@ -194,3 +194,7 @@
 ## 测试健壮性（2026-11-25）
 
 - [x] 测试健壮性·`TestDriverRunsWithFaultsAndAccountsEveryTx` 双竞态（全仓 `go test ./... -count=1` 满负载下实测 FAIL 两种形态）：①dial 前注入故障——ErrorRate 0.2 下首条 chain-id 探测在两端点同时摇中注入错误的概率约 4%，`Run` 在 `evmMod.Start` 即失败（`no endpoint reachable: injected endpoint failure`），测的是启动运气而非驱动；②RevertRate 0.15 的「至少一次 revert」断言在负载下只挖出少量交易时按 `0.85^k` 衰减（实测 4.01s 跑完 Reverted=0）。修：改为先 `selfHosted(Faults{})` 干净起跑、goroutine 内 `Run`、`d.Adapter()` 非空（池已拨号）后再对全部端点 `SetFaults`（与 `TestPoolFailoverCounter` 的先拨号后注入顺序一致，该测试文件既有惯例）；RevertRate 提到 0.5 抹平 `0.85^k`。锤测：`-run` 单测 `-count=20` 全绿（80.4s）、`-race -count=2` 全绿、全仓 `go test ./... -count=1` 33 包 ok EXIT=0；golangci-lint 无新增 issue（既有 `driver_test.go:246 <-runErr` errcheck 在 HEAD 上已存在、非本改动引入，未动）。 — b6de377
+
+## 依赖审计·GO-2026-6278（2026-11-25，源 CI vuln job）
+
+- [x] 依赖审计·GO-2026-6278（gorilla/websocket 弱 PRNG 生成 WebSocket mask key，CVSS per OSV；受影响 v1.5.3，修复仅存在于 master 伪版本、上游无 v1.5.4 tag）：advisory 于 2026-11-21 CI 绿 → 2026-11-25 CI 红窗口内新入库，go.mod 未变、属漏洞库更新点亮既有传递依赖（经 go-ethereum v1.17.10 与 solana-go v1.26.0 双路径可达，8 条符号级 trace：ethclient ws 拨号/读写/Close、devchain ServeHTTP 的 io.ReadAll）。修：`go get github.com/gorilla/websocket@v1.5.4-0.20240701034025-d67f41855da4`（OSV 指定 fixed 版本）+ `go mod tidy`（连带补显式 `golang.org/x/net v0.62.0` indirect）。验收：本地 `GOTOOLCHAIN=go1.27.4 govulncheck ./...` = No vulnerabilities found；`go mod verify` 通过；`go build ./...` + `go vet ./...` OK；全仓 `go test ./... -count=1` 34 包 0 失败；CI run 45652257696 四 job 全绿（vuln 43s / test 1.26.x / test 1.27.x / lint）。 — ef6436f
