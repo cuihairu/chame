@@ -47,10 +47,43 @@ func selfHosted(t *testing.T, faults devchain.Faults) *Driver {
 }
 
 func TestDriverRunsWithFaultsAndAccountsEveryTx(t *testing.T) {
-	d := selfHosted(t, devchain.Faults{ErrorRate: 0.2, DropRate: 0.15, RevertRate: 0.15})
-	res, err := d.Run(context.Background())
-	if err != nil {
-		t.Fatalf("run: %v", err)
+	// Dial clean, then inject (the same order TestPoolFailoverCounter
+	// uses): faulting the pool before Run dials it makes the very first
+	// chain-id probe fail on both endpoints ~4% of the time, which
+	// tests startup luck instead of the driver. RevertRate 0.5 keeps
+	// "at least one revert" robust on loaded machines that mine only a
+	// handful of transactions (0.15 gave 0.85^k, which bit under load).
+	d := selfHosted(t, devchain.Faults{})
+	runDone := make(chan struct{})
+	var res *Result
+	var runErr error
+	go func() {
+		defer close(runDone)
+		res, runErr = d.Run(context.Background())
+	}()
+	// The adapter appears only once the pool has been dialed; bring the
+	// faults up from there so every sent transaction runs under them.
+	dialWait := time.NewTimer(5 * time.Second)
+	defer dialWait.Stop()
+	for d.Adapter() == nil {
+		select {
+		case <-runDone:
+			t.Fatalf("run finished without dialing: %v", runErr)
+		case <-dialWait.C:
+			t.Fatal("driver never dialed the endpoint pool")
+		default:
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	faults := devchain.Faults{ErrorRate: 0.2, DropRate: 0.15, RevertRate: 0.5}
+	for _, url := range d.Config().Endpoints {
+		if err := d.faultNode(url).SetFaults(faults); err != nil {
+			t.Fatalf("faults: %v", err)
+		}
+	}
+	<-runDone
+	if runErr != nil {
+		t.Fatalf("run: %v", runErr)
 	}
 	if res.Sent == 0 {
 		t.Fatal("no transactions were sent")
